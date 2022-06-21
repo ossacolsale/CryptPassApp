@@ -1,0 +1,16 @@
+{
+    "electron": {
+        "linux": {
+            "package": [
+                "zip",
+                "deb"
+            ]
+        },
+        "windows": {
+            "package": [
+                "zip",
+                "msi"
+            ]
+        }
+    }
+}

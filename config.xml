@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.cryptpass.app" version="1.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>CryptPassApp</name>
+    <description>Password wallet manager</description>
+    <author email="email@giancarlomangiagli.it" href="https://www.giancarlomangiagli.it">
+        Giancarlo Mangiagli
+    </author>
+    <content src="index.html" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <icon src="www/img/cp.png" width="512" height="512" density="mdpi" />
+    <platform name="electron">
+        <preference name="ElectronSettingsFilePath" value="src/settings/electron.json" />
+    </platform>
+</widget>

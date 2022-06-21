@@ -1,0 +1,44 @@
+{
+  "name": "com.cryptpass.app",
+  "displayName": "CryptPassApp",
+  "version": "1.0.1",
+  "description": "A sample Apache Cordova application that responds to the deviceready event.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test-android": "tsc && cordova run android",
+    "test-electron": "tsc && cordova run electron --nobuild",
+    "build-electron": "npm run electron-compile && cordova build electron --release",
+    "build-android": "cordova build android --release",
+    "electron-compile": "tsc && node setup-electron.js"
+  },
+  "keywords": [
+    "ecosystem:cordova"
+  ],
+  "author": "Apache Cordova Team",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/jquery": "^3.5.14",
+    "@types/wicg-file-system-access": "^2020.9.5",
+    "cordova-android": "^10.1.2",
+    "cordova-browser": "^6.0.0",
+    "cordova-clipboard": "^1.3.0",
+    "cordova-electron": "^3.1.0",
+    "cordova-plugin-save-dialog": "github:ossacolsale/cordova-plugin-save-dialog-CUSTOM",
+    "cordova-plugin-secure-key-store": "github:pradeep1991singh/cordova-plugin-secure-key-store",
+    "cordova-plugin-simple-file-chooser": "github:ossacolsale/cordova-plugin-simple-file-chooser-CUSTOM"
+  },
+  "cordova": {
+    "platforms": [
+      "browser",
+      "android",
+      "electron"
+    ],
+    "plugins": {
+      "cordova-plugin-secure-key-store": {},
+      "cordova-plugin-save-dialog": {},
+      "cordova-clipboard": {},
+      "cordova-plugin-simple-file-chooser": {}
+    }
+  }
+}
