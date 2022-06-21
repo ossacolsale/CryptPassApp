@@ -1,6 +1,6 @@
 # CryptPass App
 
-CryptPass App is an app based on the [CryptPass library](../CryptPass). For any details and __downloads__ please see [CryptPass official webpage](https://giancarlomangiagli.it/en/CryptPass_password_manager.html).
+CryptPass App is an app based on the [CryptPass library](https://github.com/ossacolsale/CryptPass). For any details and __downloads__ please see [CryptPass official webpage](https://giancarlomangiagli.it/en/CryptPass_password_manager.html).
 
 This app is also published on [Google Play Store](https://play.google.com/store/apps/details?id=com.cryptpass.app) and here is the source code.
 
