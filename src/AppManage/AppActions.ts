@@ -2,15 +2,15 @@ class AppActions {
 
     public async Unlock (pwd: string): Promise<boolean> {
         const data = await Config.readData();
-        __CryptPass_ = new LibCryptPass.CryptPassCached(StandardRnW, data.kp, data.se);
-        const k = __CryptPass_.GetK(pwd);
+        State.CryptPass = new LibCryptPass.CryptPassCached(StandardRnW, data.kp, data.se);
+        const k = State.CryptPass.GetK(pwd);
         if (k) {
-            __K_ = k;
-            __EntriesManage_ = __CryptPass_.GetEntriesManage(__K_,true);
-            __Password_ = pwd;
+            State.K = k;
+            State.EntriesManage = State.CryptPass.GetEntriesManage(State.K,true);
+            State.Password = pwd;
             return true;
         } else {
-            __Password_ = '';
+            State.Password = '';
             return false;
         }
     }

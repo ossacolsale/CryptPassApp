@@ -38,14 +38,14 @@ class ConfigActions {
         const changed = await this._CryptPassConfig.chPwd(oldPwd, newPwd);
         if (changed) {
             this._PWD = newPwd;
-            __Password_ = '';
+            State.logout();
             LocalStorage.PasswordExpirationDaysSet(true);
             return true;
         } else return false;
     }
 
-    public needToChangePassword (): boolean {
-        return (new Date()).getTime() - this._CryptPassConfig.getLastChange().getTime() > LocalStorage.PasswordExpirationDays() * 86400000;
+    public async needToChangePassword (): Promise<boolean> {
+        return (await Config.getPreferences()).ChPwdReminder && (new Date()).getTime() - this._CryptPassConfig.getLastChange().getTime() > LocalStorage.PasswordExpirationDays() * 86400000;
     }
 
     public checkPwd (): boolean {

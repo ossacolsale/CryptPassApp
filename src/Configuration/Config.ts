@@ -1,6 +1,13 @@
+
+
 interface config {
     KeyFilePath: string,
-    Sequence: string
+    Sequence: string,
+    Preferences: preferences
+}
+
+interface preferences {
+    ChPwdReminder: boolean
 }
 
 type Sequence = { Sequence: number[] };
@@ -8,13 +15,15 @@ type Sequence = { Sequence: number[] };
 type ConfigStatus = 'OK' | 'FatalError' | 'KO' | 'MissingKeypass' | 'EmptySequence' | 'EmptyKeypass';
 
 class Config {
-    
+
+    protected static readonly defaultPreferences: preferences = { ChPwdReminder: true };
     protected static readonly emptySequence: Sequence = { Sequence: [] };
     protected static readonly configName = 'cryptPassCfg';
     protected static readonly defaultKeyPassFilename = 'keypass.json';
     protected static readonly defaultConfig: config = {    KeyFilePath: '',
-                                                    Sequence: '{"Sequence": []}' };
-    
+                                                    Sequence: '{"Sequence": []}',
+                                                    Preferences: this.defaultPreferences};
+
     public static async ConfigInit() {
         return this.setConfig(this.defaultConfig);
     }
@@ -37,6 +46,22 @@ class Config {
             return false;
         }
             
+    }
+
+    public static async getPreferences () {
+        const config =  await this.getConfig();
+        if (config !== false) {
+            return config.Preferences ?? this.defaultPreferences;
+        }
+        else throw Error('Failed getting Prefences');
+    }
+
+    public static async setPreferences (preferences: preferences): Promise<boolean> {
+        const config =  await this.getConfig();
+        if (config !== false) {
+            config.Preferences = preferences;
+            return await this.setConfig(config);
+        } return false;
     }
 
     public static async getStatus (): Promise<ConfigStatus> {

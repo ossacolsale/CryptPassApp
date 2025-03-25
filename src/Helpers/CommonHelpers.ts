@@ -25,7 +25,7 @@ class CommonHelpers {
     }
 
     public static CheckChPassword (oldpwd: string, pwd1: string, pwd2: string): true | 'wrongOld' | 'wrongNew' {
-        if (oldpwd !== __Password_) {
+        if (oldpwd !== State.Password) {
             alert('Old password is wrong, please retype');
             return 'wrongOld';
         } else if (oldpwd == pwd1 || oldpwd == pwd2) {

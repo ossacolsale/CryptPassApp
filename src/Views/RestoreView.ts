@@ -76,7 +76,7 @@ class RestoreView extends View implements ViewModel {
                 ${this.ro.back !== undefined ? `<p>${ViewHelpers.button(this.IdGoBack,'Go Back',this.ClassFormBtnSec)}</p>` : ''}
                 `,() => this.clickEl(this.IdGoBack));
 
-        this._ca = new ConfigActions(__Password_);
+        this._ca = new ConfigActions(State.Password);
         this._aa = new AppActions();
     }    
 
@@ -140,7 +140,7 @@ class RestoreView extends View implements ViewModel {
     }
 
     protected restart() {
-        __Password_ = '';
+        State.logout();
         ScenarioController.changeScenario(new MainView());
     }
 
@@ -181,7 +181,7 @@ class RestoreView extends View implements ViewModel {
         const newSequence = this.isChecked(this.IdInsertSequence) ? this._sequence : undefined;
         const ok = await this._ca.setSequenceAndKeyPassUri(newSequence, newFile);
         if (ok) {
-            __Password_ = '';
+            State.logout();
             ScenarioController.changeScenario(new MainView());
         }
         else alert('Error! Something has gone wrong. Please retry.');

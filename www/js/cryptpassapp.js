@@ -8,30 +8,65 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-let __K_ = '';
-let __Password_ = '';
-let __EntriesManage_;
-let __CryptPass_;
+class State {
+    static get K() {
+        return this.__K_;
+    }
+    static set K(value) {
+        this.__K_ = value;
+    }
+    static get Password() {
+        return this.__Password_;
+    }
+    static set Password(value) {
+        this.__Password_ = value;
+    }
+    static get CryptPass() {
+        if (this.__CryptPass_)
+            return this.__CryptPass_;
+        throw Error('CryptPass null');
+    }
+    static set CryptPass(value) {
+        this.__CryptPass_ = value;
+    }
+    static get EntriesManage() {
+        if (this.__EntriesManage_)
+            return this.__EntriesManage_;
+        throw Error('EntriesManage null');
+    }
+    static set EntriesManage(em) {
+        this.__EntriesManage_ = em;
+    }
+    static logout() {
+        this.__CryptPass_ = null;
+        this.__EntriesManage_ = null;
+        this.__K_ = '';
+        this.__Password_ = '';
+    }
+}
+State.__K_ = '';
+State.__Password_ = '';
 document.addEventListener('deviceready', () => ScenarioController.changeScenario(new WelcomeView()), false);
 class AppActions {
     Unlock(pwd) {
         return __awaiter(this, void 0, void 0, function* () {
             const data = yield Config.readData();
-            __CryptPass_ = new LibCryptPass.CryptPassCached(StandardRnW, data.kp, data.se);
-            const k = __CryptPass_.GetK(pwd);
+            State.CryptPass = new LibCryptPass.CryptPassCached(StandardRnW, data.kp, data.se);
+            const k = State.CryptPass.GetK(pwd);
             if (k) {
-                __K_ = k;
-                __EntriesManage_ = __CryptPass_.GetEntriesManage(__K_, true);
-                __Password_ = pwd;
+                State.K = k;
+                State.EntriesManage = State.CryptPass.GetEntriesManage(State.K, true);
+                State.Password = pwd;
                 return true;
             }
             else {
-                __Password_ = '';
+                State.Password = '';
                 return false;
             }
         });
     }
 }
+var _a;
 class Config {
     static ConfigInit() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -58,6 +93,27 @@ class Config {
             else {
                 return false;
             }
+        });
+    }
+    static getPreferences() {
+        var _b;
+        return __awaiter(this, void 0, void 0, function* () {
+            const config = yield this.getConfig();
+            if (config !== false) {
+                return (_b = config.Preferences) !== null && _b !== void 0 ? _b : this.defaultPreferences;
+            }
+            else
+                throw Error('Failed getting Prefences');
+        });
+    }
+    static setPreferences(preferences) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const config = yield this.getConfig();
+            if (config !== false) {
+                config.Preferences = preferences;
+                return yield this.setConfig(config);
+            }
+            return false;
         });
     }
     static getStatus() {
@@ -172,11 +228,14 @@ class Config {
         });
     }
 }
+_a = Config;
+Config.defaultPreferences = { ChPwdReminder: true };
 Config.emptySequence = { Sequence: [] };
 Config.configName = 'cryptPassCfg';
 Config.defaultKeyPassFilename = 'keypass.json';
 Config.defaultConfig = { KeyFilePath: '',
-    Sequence: '{"Sequence": []}' };
+    Sequence: '{"Sequence": []}',
+    Preferences: _a.defaultPreferences };
 class ConfigActions {
     constructor(password, InitializationDone = false) {
         this._initializedKey = 'Initialized';
@@ -210,7 +269,7 @@ class ConfigActions {
             const changed = yield this._CryptPassConfig.chPwd(oldPwd, newPwd);
             if (changed) {
                 this._PWD = newPwd;
-                __Password_ = '';
+                State.logout();
                 LocalStorage.PasswordExpirationDaysSet(true);
                 return true;
             }
@@ -219,7 +278,9 @@ class ConfigActions {
         });
     }
     needToChangePassword() {
-        return (new Date()).getTime() - this._CryptPassConfig.getLastChange().getTime() > LocalStorage.PasswordExpirationDays() * 86400000;
+        return __awaiter(this, void 0, void 0, function* () {
+            return (yield Config.getPreferences()).ChPwdReminder && (new Date()).getTime() - this._CryptPassConfig.getLastChange().getTime() > LocalStorage.PasswordExpirationDays() * 86400000;
+        });
     }
     checkPwd() {
         return this._CryptPassConfig.checkPwd(this._PWD);
@@ -840,7 +901,7 @@ class CommonHelpers {
         return ok;
     }
     static CheckChPassword(oldpwd, pwd1, pwd2) {
-        if (oldpwd !== __Password_) {
+        if (oldpwd !== State.Password) {
             alert('Old password is wrong, please retype');
             return 'wrongOld';
         }
@@ -1000,6 +1061,7 @@ class DescrView extends View {
         this.IdGoToInit = 'goToInit';
         this.IdDescription = 'description';
         this.IdSetDescription = 'setDescription';
+        this.IdRemoveDescription = 'removeDescription';
         this.IdDescriptionForm = 'descriptionForm';
         this.Handlers = [
             { name: 'DescrViewClick', handler: (e) => this.onClick(e), type: 'click' },
@@ -1008,14 +1070,15 @@ class DescrView extends View {
     }
     Init() {
         return __awaiter(this, void 0, void 0, function* () {
-            const passDescr = __CryptPass_.getPassDescription().trim();
-            this.setApp(`<h2>${passDescr == '' ? 'Add description' : 'Edit description'}</h2>
+            const passDescr = State.CryptPass.getPassDescription().trim();
+            this.setApp(`<h2>${passDescr === '' ? 'Add description' : 'Edit description'}</h2>
         <form id="${this.IdDescriptionForm}">
         <p>${ViewHelpers.textinput(this.IdDescription, passDescr, 'Put the description here', this.ClassFormCtrl)}</p>
         <p class="alert alert-warning">Warning! This description <strong>won't be encrypted</strong>.
         So take care not to put any significant or important information in it but keep it as generic as possible.</p>
         <p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}
-        ${ViewHelpers.submit(this.IdSetDescription, 'Confirm', this.ClassFormBtn)}</p>
+        ${ViewHelpers.submit(this.IdSetDescription, 'Confirm new description', this.ClassFormBtn)}
+        ${passDescr === '' ? '' : ViewHelpers.button(this.IdRemoveDescription, 'Remove description', this.ClassFormBtn)}</p>
         </form>
         `, () => this.clickEl(this.IdGoToInit));
         });
@@ -1033,20 +1096,23 @@ class DescrView extends View {
         return __awaiter(this, void 0, void 0, function* () {
             switch (e.target.id) {
                 case this.IdGoToInit:
-                    ScenarioController.changeScenario(new MainView());
+                    ScenarioController.changeScenario(new OtherView());
+                    break;
+                case this.IdRemoveDescription:
+                    this.handleSet(true);
                     break;
             }
         });
     }
-    handleSet() {
+    handleSet(remove = false) {
         return __awaiter(this, void 0, void 0, function* () {
             const descr = this.getEl(this.IdDescription).value.trim();
-            if (descr.length > 0) {
+            if (descr.length > 0 || remove) {
                 this.LoaderShow();
-                const res = yield __CryptPass_.setPassDescription(descr);
+                const res = yield State.CryptPass.setPassDescription(remove ? '' : descr);
                 this.LoaderHide();
                 if (res) {
-                    ScenarioController.changeScenario(new MainView());
+                    ScenarioController.changeScenario(new OtherView());
                 }
                 else {
                     alert('Sorry. We encountered an error setting up the description');
@@ -1082,7 +1148,7 @@ class MainView extends View {
     }
     Init() {
         return __awaiter(this, void 0, void 0, function* () {
-            this._ca = new ConfigActions(__Password_);
+            this._ca = new ConfigActions(State.Password);
             this._aa = new AppActions();
             const status = yield this._ca.getStatus();
             switch (status) {
@@ -1094,8 +1160,8 @@ class MainView extends View {
                     break;
                 case 'OK':
                     try {
-                        if (__Password_ !== '') {
-                            if (this._ca.needToChangePassword()) {
+                        if (State.Password !== '') {
+                            if (yield this._ca.needToChangePassword()) {
                                 this.setApp(`<form id="${this.IdChPwdForm}">
                             <p class="alert alert-danger">Caution! Last time you created or changed your password was more than ${LocalStorage.PasswordExpirationDays()} days ago. 
                             It's strictly recommended to change your password montly.</p>
@@ -1109,20 +1175,7 @@ class MainView extends View {
                             `);
                             }
                             else {
-                                let out = '';
-                                const passDescr = __CryptPass_.getPassDescription().trim();
-                                if (passDescr == '')
-                                    out += `<p class="alert alert-warning">Your password wallet has no description</p>`;
-                                else
-                                    out += `<p class="text-center font-italic">${passDescr}</p>`;
-                                out += `
-                            <div class="d-grid gap-2 col-8 mx-auto">
-                            ${ViewHelpers.button(this.IdChangeDescr, passDescr == '' ? 'Add a description' : 'Change description', this.ClassMenuBtn)}
-                            ${ViewHelpers.button(this.IdManagePwd, 'Manage wallet', this.ClassMenuBtn)}
-                            ${ViewHelpers.button(this.IdOther, 'Other options', this.ClassMenuBtn)}
-                            </div>
-                            `;
-                                this.setApp(out);
+                                ScenarioController.changeScenario(new PassView());
                             }
                         }
                         else {
@@ -1225,17 +1278,24 @@ class OtherView extends View {
         super(...arguments);
         this.IdGoToInit = 'goToInit';
         this.IdGoToMainMenu = 'goToMainMenu';
+        this.IdPreferences = 'Preferences';
         this.IdRestore = 'Restore';
         this.IdChangePwd = 'ChangePwd';
         this.IdViewSequence = 'ViewSequence';
+        this.IdChangeDescr = 'IdChangeDescr';
         this.IdInstructions = 'Instructions';
+        this.IdChPwdRemind = 'RememberChPwd';
+        this.IdSavePreferences = 'SavePreferences';
+        this.IdRetryLoad = 'RetryLoad';
         this.IdRefreshSequence = 'RefreshSequence';
         this.IdConfirmSequenceRefresh = 'ConfirmSequenceRefresh';
         this.IdPassword1 = 'password1';
         this.IdPassword2 = 'password2';
         this.IdChPwdForm = 'ChPwdForm';
+        this.IdChPreferencesForm = 'PrefencesForm';
         this.IdPasswordOld = 'PasswordOld';
         this.IdHandleChPwd = 'HandleChPwd';
+        this.RemindValue = 'Remind';
         this.Handlers = [
             { name: 'OtherViewClick', handler: (e) => this.onClick(e), type: 'click' },
             { name: 'OtherViewSubmit', handler: (e) => { e.preventDefault(); this.onSubmit(e); }, type: 'submit' }
@@ -1243,14 +1303,17 @@ class OtherView extends View {
     }
     Init() {
         return __awaiter(this, void 0, void 0, function* () {
-            this._ca = new ConfigActions(__Password_, true);
+            this._ca = new ConfigActions(State.Password, true);
+            const passDescr = State.CryptPass.getPassDescription().trim();
             this.setApp(`
         <h2>Other options</h2>
         <div class="d-grid gap-2 col-8 mx-auto">
+        ${ViewHelpers.button(this.IdPreferences, 'Preferences', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdViewSequence, 'View sequence', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangePwd, 'Change password', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdRestore, 'Restore/reset wallet', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions, 'Read instructions', this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdChangeDescr, passDescr == '' ? 'Add a description to your wallet' : 'Change description to your wallet', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu, 'Go back', this.ClassFormBtnSec)}
         </div>
         `, () => this.clickEl(this.IdGoToMainMenu));
@@ -1263,7 +1326,17 @@ class OtherView extends View {
                     this.Init();
                     break;
                 case this.IdGoToMainMenu:
-                    ScenarioController.changeScenario(new MainView());
+                    ScenarioController.changeScenario(new PassView());
+                    break;
+                case this.IdSavePreferences:
+                    this.SavePreferences();
+                    break;
+                case this.IdChangeDescr:
+                    ScenarioController.changeScenario(new DescrView());
+                    break;
+                case this.IdRetryLoad:
+                case this.IdPreferences:
+                    this.ViewPreferences();
                     break;
                 case this.IdRestore:
                     const seq = this._ca.getSequence().join(', ');
@@ -1302,6 +1375,35 @@ class OtherView extends View {
                     this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => ScenarioController.changeScenario(new MainView()), (Old, New) => __awaiter(this, void 0, void 0, function* () { return yield this._ca.changePwd(Old, New); }));
                     break;
             }
+        });
+    }
+    ViewPreferences() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                this.preferences = yield Config.getPreferences();
+                this.setApp(`<h2>Preferences</h2>
+            <form id="${this.IdChPreferencesForm}">
+            <p>${ViewHelpers.checkbox(this.IdChPwdRemind, this.RemindValue, this.preferences.ChPwdReminder)} ${ViewHelpers.label(this.IdChPwdRemind, 'Remind me to change password every month')}</p>
+            <p>${ViewHelpers.submit(this.IdSavePreferences, 'Save preferences', this.ClassFormBtn)}
+            ${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
+            </form>
+                `, () => this.clickEl(this.IdGoToInit));
+            }
+            catch (e) {
+                this.setApp(`<h2>Preferences</h2>
+                <p>Error: ${e.message}</p>
+                <form id="${this.IdChPreferencesForm}">
+                <p>${ViewHelpers.submit(this.IdRetryLoad, 'Retry to load preferences', this.ClassFormBtn)}
+            ${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
+            </form>
+                `, () => this.clickEl(this.IdGoToInit));
+            }
+        });
+    }
+    SavePreferences() {
+        return __awaiter(this, void 0, void 0, function* () {
+            alert(this.getVal(this.IdChPwdRemind));
+            this.preferences.ChPwdReminder = this.getVal(this.IdChPwdRemind) === this.RemindValue;
         });
     }
     changePassword() {
@@ -1360,7 +1462,8 @@ class PassView extends View {
     constructor() {
         super(...arguments);
         this.IdGoToInit = 'goToInit';
-        this.IdGoToMainMenu = 'goToMainMenu';
+        this.IdLogout = 'goToMainMenu';
+        this.IdOtherOptions = 'goToOtherOptions';
         this.IdEntriesList = 'entries';
         this.IdNewEntry = 'newEntry';
         this.IdSearch = 'Search';
@@ -1410,16 +1513,19 @@ class PassView extends View {
     }
     Init() {
         return __awaiter(this, void 0, void 0, function* () {
+            console.log(this.CheckedTags, this.searchEntry);
+            const passDescr = State.CryptPass.getPassDescription().trim();
             this.OtherCounter = 0;
-            const names = __EntriesManage_.GetEntryNames().sort(CommonHelpers.insensitiveSorter);
-            let out = `<h2>Manage wallet</h2>
-        <p>${ViewHelpers.button(this.IdGoToMainMenu, 'Go back', this.ClassFormBtnSec)}
-        ${ViewHelpers.button(this.IdNewEntry, 'Add a new entry', this.ClassFormBtn)}</p>`;
+            const names = State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter);
+            let out = `${passDescr === '' ? '' : '<p>Wallet &quot;<em>' + passDescr + '</em>&quot;</p>'}
+        <p>${ViewHelpers.button(this.IdLogout, 'Logout', this.ClassFormBtnSec)}
+        ${ViewHelpers.button(this.IdNewEntry, 'Add a new entry', this.ClassFormBtn)}
+        ${ViewHelpers.button(this.IdOtherOptions, 'Other options', this.ClassFormBtn)}</p>`;
             if (names.length == 0) {
                 out += `<p class="alert alert-warning">Your wallet is empty</p>`;
             }
             else {
-                let tags = TagHelpers.getAllTags(__EntriesManage_);
+                let tags = TagHelpers.getAllTags(State.EntriesManage);
                 let tagsFilter = '';
                 if (tags.length > 0) {
                     tagsFilter = `<div id="${this.IdTagFilter}" class="my-4 d-none">${this.PrintTags(tags)}</div>`;
@@ -1427,7 +1533,7 @@ class PassView extends View {
                 out += `
             <div class="container">
                 <div class="row">
-                    <div class="col" id="${this.IdSearchDiv}">${ViewHelpers.textinput(this.IdSearch, undefined, 'Find entry...', this.ClassFormCtrl, false, true)}</div>
+                    <div class="col" id="${this.IdSearchDiv}">${ViewHelpers.textinput(this.IdSearch, this.searchEntry, 'Find entry...', this.ClassFormCtrl, false, true)}</div>
                     <div class="col">${ViewHelpers.button(this.IdShowHideTags, 'Tags search', this.ClassFormBtn)}</div>
                 </div>
             </div>
@@ -1435,17 +1541,23 @@ class PassView extends View {
             <p>Select an entry to view:</p>
             <ul id="${this.IdEntriesList}">${this.PrintEntriesName(names)}</ul>`;
             }
-            this.setApp(out, () => this.clickEl(this.IdGoToMainMenu));
-            this.searchRoutine(names);
+            this.setApp(out, () => this.clickEl(this.IdLogout));
+            this.searchRoutine(names, true);
+            if (this.CheckedTags.length > 0) {
+                this.showHideTags();
+            }
         });
     }
-    searchRoutine(names) {
+    searchRoutine(names, firstTime = false) {
         setTimeout(() => {
-            const s = this.getVal(this.IdSearch).trim();
-            if (s != this.searchEntry) {
-                this.searchEntry = s;
-                this.setInner(this.IdEntriesList, this.PrintEntriesName(this.searchEntryName(names, s)));
+            try {
+                const s = this.getVal(this.IdSearch).trim();
+                if (s != this.searchEntry || (firstTime && this.searchEntry !== '')) {
+                    this.searchEntry = s;
+                    this.setInner(this.IdEntriesList, this.PrintEntriesName(this.searchEntryName(names, s)));
+                }
             }
+            catch (e) { }
             this.searchRoutine(names);
         }, 150);
     }
@@ -1499,8 +1611,14 @@ class PassView extends View {
         return __awaiter(this, void 0, void 0, function* () {
             const el = e.target;
             switch (el.id) {
-                case this.IdGoToMainMenu:
-                    ScenarioController.changeScenario(new MainView());
+                case this.IdOtherOptions:
+                    ScenarioController.changeScenario(new OtherView());
+                    break;
+                case this.IdLogout:
+                    if (confirm('Are you sure to logout?')) {
+                        State.logout();
+                        ScenarioController.changeScenario(new MainView());
+                    }
                     break;
                 case this.IdGoToInit:
                     this.Init();
@@ -1544,6 +1662,7 @@ class PassView extends View {
                     this.addTag(el.dataset['tag']);
                 }
                 else if (el.dataset['tagfilter'] !== undefined) {
+                    console.log(el);
                     this.selectTag(el.dataset['tagfilter']);
                 }
                 else if (el.dataset['view'] !== undefined) {
@@ -1590,8 +1709,8 @@ class PassView extends View {
         let tags = [];
         switch (tag) {
             case undefined:
-                tags = TagHelpers.getAllTags(__EntriesManage_);
-                entries = __EntriesManage_.GetEntryNames();
+                tags = TagHelpers.getAllTags(State.EntriesManage);
+                entries = State.EntriesManage.GetEntryNames();
                 this.CheckedTags = [];
                 break;
             default:
@@ -1602,20 +1721,22 @@ class PassView extends View {
                 else {
                     this.CheckedTags.splice(index, 1);
                 }
-                const ev = TagHelpers.getAllEntriesFromTags(this.CheckedTags, __EntriesManage_);
+                const ev = TagHelpers.getAllEntriesFromTags(this.CheckedTags, State.EntriesManage);
                 tags = TagHelpers.getAllTagsFromArr(ev);
                 entries = ev.map((val) => val.Name !== undefined ? val.Name : '');
         }
-        this.setInner(this.IdTagFilter, this.PrintTags(tags));
         this.setInner(this.IdEntriesList, this.PrintEntriesName(entries));
     }
     PrintTags(tags) {
         let tagsButtons = new Array();
         let tagCounter = 0;
         tags.forEach((tag) => {
+            const checked = this.CheckedTags.indexOf(tag) != -1;
             let id = ++tagCounter;
-            tagsButtons.push(`${ViewHelpers.checkbox('tag' + id, tag, this.CheckedTags.indexOf(tag) != -1, 'btn-check', `data-tagfilter="${tag}"`)}
+            tagsButtons.push(`${ViewHelpers.checkbox('tag' + id, tag, checked, 'btn-check', `data-tagfilter="${tag}"`)}
                 ${ViewHelpers.label('tag' + id, tag, 'my-1 btn btn-primary btn-sm')}`);
+            if (checked)
+                this.selectTag(tag);
         });
         return `TAGS: ${tagsButtons.join(' ')}`;
     }
@@ -1677,7 +1798,7 @@ class PassView extends View {
         }
     }
     handleEdit() {
-        const entry = __EntriesManage_.GetEntry(this.getInner(this.IdNameTitle));
+        const entry = State.EntriesManage.GetEntry(this.getInner(this.IdNameTitle));
         if (entry !== false) {
             this.setApp(`<p>${ViewHelpers.button(this.IdGoToView, 'Cancel', this.ClassFormBtnSec)}
             ${ViewHelpers.button(this.IdDeleteEntry, 'Delete entry', this.ClassFormBtnSec)}</p>
@@ -1701,7 +1822,7 @@ class PassView extends View {
         `, () => this.clickEl(this.IdEdit));
     }
     viewEntry(EntryName) {
-        const entry = __EntriesManage_.GetEntry(EntryName);
+        const entry = State.EntriesManage.GetEntry(EntryName);
         if (entry !== false)
             this.setApp(`<p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)} ${ViewHelpers.button(this.IdEdit, 'Edit entry', this.ClassFormBtn)}</p>
             <h2 id="${this.IdNameTitle}">${entry.Name}</h2>
@@ -1745,9 +1866,9 @@ class PassView extends View {
     deleteEntry() {
         return __awaiter(this, void 0, void 0, function* () {
             const Name = this.getInner(this.IdNameTitle);
-            if (__EntriesManage_.DeleteEntry(Name)) {
+            if (State.EntriesManage.DeleteEntry(Name)) {
                 this.LoaderShow();
-                const setresult = yield __CryptPass_.SetEntries(__EntriesManage_.Export(), __K_, true);
+                const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.K, true);
                 this.LoaderHide();
                 if (setresult) {
                     alert('Entry "' + Name + '" successfully removed');
@@ -1769,7 +1890,7 @@ class PassView extends View {
             if (Name != '') {
                 let checkName = 'Invalid';
                 if (Name != NameOld) {
-                    if (__EntriesManage_.GetEntry(Name) === false) {
+                    if (State.EntriesManage.GetEntry(Name) === false) {
                         checkName = 'Changed';
                     }
                     else {
@@ -1780,10 +1901,10 @@ class PassView extends View {
                 else
                     checkName = 'OK';
                 if (checkName != 'Invalid') {
-                    if ((checkName == 'Changed' && __EntriesManage_.UpdateEntryName(NameOld, Name)) || checkName == 'OK') {
-                        if (__EntriesManage_.UpdateEntry(this.composeEntry())) {
+                    if ((checkName == 'Changed' && State.EntriesManage.UpdateEntryName(NameOld, Name)) || checkName == 'OK') {
+                        if (State.EntriesManage.UpdateEntry(this.composeEntry())) {
                             this.LoaderShow();
-                            const setresult = yield __CryptPass_.SetEntries(__EntriesManage_.Export(), __K_, true);
+                            const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.K, true);
                             this.LoaderHide();
                             if (setresult) {
                                 this.viewEntry(Name);
@@ -1811,10 +1932,10 @@ class PassView extends View {
         return __awaiter(this, void 0, void 0, function* () {
             const Name = this.getVal(this.IdName);
             if (Name != '') {
-                if (__EntriesManage_.GetEntry(Name) === false) {
-                    if (__EntriesManage_.AddEntry(this.composeEntry())) {
+                if (State.EntriesManage.GetEntry(Name) === false) {
+                    if (State.EntriesManage.AddEntry(this.composeEntry())) {
                         this.LoaderShow();
-                        const setresult = yield __CryptPass_.SetEntries(__EntriesManage_.Export(), __K_, true);
+                        const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.K, true);
                         this.LoaderHide();
                         if (setresult) {
                             alert('Entry correctly added to your wallet');
@@ -1862,7 +1983,7 @@ class PassView extends View {
         if (!readonly || entry.Tags !== undefined)
             out += this.attrInput(this.IdTags, 'Tags', 'Tags comma separated (eg. &quot;work, Windows&quot;))', entry.Tags === undefined ? '' : entry.Tags, readonly, true);
         if (!readonly) {
-            const tags = TagHelpers.getAllTags(__EntriesManage_);
+            const tags = TagHelpers.getAllTags(State.EntriesManage);
             if (tags.length > 0) {
                 let tagsButtons = new Array();
                 let tagCounter = 0;
@@ -1981,7 +2102,7 @@ class RestoreView extends View {
                 <p>${ViewHelpers.button(this.IdStartFromScratch, 'Start from scratch', this.ClassFormBtn)}</p>
                 ${this.ro.back !== undefined ? `<p>${ViewHelpers.button(this.IdGoBack, 'Go Back', this.ClassFormBtnSec)}</p>` : ''}
                 `, () => this.clickEl(this.IdGoBack));
-            this._ca = new ConfigActions(__Password_);
+            this._ca = new ConfigActions(State.Password);
             this._aa = new AppActions();
         });
     }
@@ -2042,7 +2163,7 @@ class RestoreView extends View {
         });
     }
     restart() {
-        __Password_ = '';
+        State.logout();
         ScenarioController.changeScenario(new MainView());
     }
     restoreWalletDisplay(action) {
@@ -2085,7 +2206,7 @@ class RestoreView extends View {
             const newSequence = this.isChecked(this.IdInsertSequence) ? this._sequence : undefined;
             const ok = yield this._ca.setSequenceAndKeyPassUri(newSequence, newFile);
             if (ok) {
-                __Password_ = '';
+                State.logout();
                 ScenarioController.changeScenario(new MainView());
             }
             else

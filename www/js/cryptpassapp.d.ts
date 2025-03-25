@@ -1,19 +1,35 @@
-declare let __K_: string;
-declare let __Password_: string;
-declare let __EntriesManage_: EntriesManage;
-declare let __CryptPass_: CryptPassCached;
+declare class State {
+    private static __K_;
+    static get K(): string;
+    static set K(value: string);
+    private static __Password_;
+    static get Password(): string;
+    static set Password(value: string);
+    private static __EntriesManage_;
+    private static __CryptPass_;
+    static get CryptPass(): CryptPassCached;
+    static set CryptPass(value: CryptPassCached | null);
+    static get EntriesManage(): EntriesManage;
+    static set EntriesManage(em: EntriesManage | null);
+    static logout(): void;
+}
 declare class AppActions {
     Unlock(pwd: string): Promise<boolean>;
 }
 interface config {
     KeyFilePath: string;
     Sequence: string;
+    Preferences: preferences;
+}
+interface preferences {
+    ChPwdReminder: boolean;
 }
 declare type Sequence = {
     Sequence: number[];
 };
 declare type ConfigStatus = 'OK' | 'FatalError' | 'KO' | 'MissingKeypass' | 'EmptySequence' | 'EmptyKeypass';
 declare class Config {
+    protected static readonly defaultPreferences: preferences;
     protected static readonly emptySequence: Sequence;
     protected static readonly configName = "cryptPassCfg";
     protected static readonly defaultKeyPassFilename = "keypass.json";
@@ -25,6 +41,8 @@ declare class Config {
     }>;
     protected static setConfig(cfg: config): Promise<boolean>;
     protected static getConfig(): Promise<config | false>;
+    static getPreferences(): Promise<preferences>;
+    static setPreferences(preferences: preferences): Promise<boolean>;
     static getStatus(): Promise<ConfigStatus>;
     protected static readSequence(): Promise<{}>;
     static writeSequence(seq: {}): Promise<boolean>;
@@ -46,7 +64,7 @@ declare class ConfigActions {
     refreshSequence(): Promise<boolean>;
     setSequenceAndKeyPassUri(seq?: number[], keypassuri?: string): Promise<boolean>;
     changePwd(oldPwd: string, newPwd: string): Promise<boolean>;
-    needToChangePassword(): boolean;
+    needToChangePassword(): Promise<boolean>;
     checkPwd(): boolean;
     setup(action: configaction, sequence?: number[]): Promise<boolean>;
     getStatus(): Promise<ConfigStatus>;
@@ -221,11 +239,12 @@ declare class DescrView extends View implements ViewModel {
     protected readonly IdGoToInit: string;
     protected readonly IdDescription: string;
     protected readonly IdSetDescription: string;
+    protected readonly IdRemoveDescription: string;
     protected readonly IdDescriptionForm: string;
     Init(): Promise<void>;
     protected onSubmit(e: Event): Promise<void>;
     protected onClick(e: Event): Promise<void>;
-    protected handleSet(): Promise<void>;
+    protected handleSet(remove?: boolean): Promise<void>;
     Handlers: EventHandlerModel[];
 }
 declare type KOsteps = 'KOStart' | 'Initialize' | 'ProceedInitialization' | 'RestoreAll' | 'Start';
@@ -256,21 +275,31 @@ declare class OtherView extends View implements ViewModel {
     onBackButton: TBackButton;
     protected readonly IdGoToInit: string;
     protected readonly IdGoToMainMenu: string;
+    protected readonly IdPreferences: string;
     protected readonly IdRestore: string;
     protected readonly IdChangePwd: string;
     protected readonly IdViewSequence: string;
+    protected readonly IdChangeDescr: string;
     protected readonly IdInstructions: string;
+    protected readonly IdChPwdRemind: string;
+    protected readonly IdSavePreferences: string;
+    protected readonly IdRetryLoad: string;
     protected readonly IdRefreshSequence: string;
     protected readonly IdConfirmSequenceRefresh: string;
     protected readonly IdPassword1: string;
     protected readonly IdPassword2: string;
     protected readonly IdChPwdForm: string;
+    protected readonly IdChPreferencesForm: string;
     protected readonly IdPasswordOld: string;
     protected readonly IdHandleChPwd: string;
+    protected readonly RemindValue: string;
     protected _ca: ConfigActions;
+    protected preferences: preferences;
     Init(): Promise<void>;
     protected onClick(e: Event): Promise<void>;
     protected onSubmit(e: Event): Promise<void>;
+    protected ViewPreferences(): Promise<void>;
+    protected SavePreferences(): Promise<void>;
     protected changePassword(): Promise<void>;
     protected showInstructions(): void;
     protected RefreshSequence(): void;
@@ -280,7 +309,8 @@ declare class OtherView extends View implements ViewModel {
 }
 declare class PassView extends View implements ViewModel {
     protected readonly IdGoToInit: string;
-    protected readonly IdGoToMainMenu: string;
+    protected readonly IdLogout: string;
+    protected readonly IdOtherOptions: string;
     protected readonly IdEntriesList: string;
     protected readonly IdNewEntry: string;
     protected readonly IdSearch: string;
@@ -318,7 +348,7 @@ declare class PassView extends View implements ViewModel {
     protected readonly valExt: string;
     protected readonly vocBarPre: string;
     Init(): Promise<void>;
-    protected searchRoutine(names: string[]): void;
+    protected searchRoutine(names: string[], firstTime?: boolean): void;
     protected showHideTags(): void;
     protected PrintViewOrCopyBar(refId: string, label: string): string;
     protected showHideTagsStatus: 'show' | 'hide';

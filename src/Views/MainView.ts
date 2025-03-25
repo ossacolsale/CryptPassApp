@@ -23,8 +23,7 @@ class MainView extends View {
 
     async Init() {
         
-
-        this._ca = new ConfigActions(__Password_);
+        this._ca = new ConfigActions(State.Password);
         this._aa = new AppActions();
 
         const status = await this._ca.getStatus();
@@ -38,8 +37,8 @@ class MainView extends View {
             break;
             case 'OK':
                 try {
-                    if (__Password_ !== '') {
-                        if (this._ca.needToChangePassword()) {
+                    if (State.Password !== '') {
+                        if (await this._ca.needToChangePassword()) {
                             this.setApp(`<form id="${this.IdChPwdForm}">
                             <p class="alert alert-danger">Caution! Last time you created or changed your password was more than ${LocalStorage.PasswordExpirationDays()} days ago. 
                             It's strictly recommended to change your password montly.</p>
@@ -52,8 +51,10 @@ class MainView extends View {
                             </form>
                             `);
                         } else {
-                            let out = '';
-                            const passDescr = __CryptPass_.getPassDescription().trim();
+                            //MainView only for restore purpose; now go directly to PassView
+                            ScenarioController.changeScenario(new PassView());
+                            /*let out = '';
+                            const passDescr = State.CryptPass.getPassDescription().trim();
                             if (passDescr == '')
                                 out += `<p class="alert alert-warning">Your password wallet has no description</p>`;
                             else
@@ -66,7 +67,7 @@ class MainView extends View {
                             </div>
                             `;
     
-                            this.setApp(out);
+                            this.setApp(out);*/
                         }
                     } else {
                         this.setApp(`<form id="${this.IdUnlockForm}">
