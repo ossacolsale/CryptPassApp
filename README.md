@@ -14,11 +14,15 @@ You can collaborate with me for the development and you can also compile and ins
 
 #basically locally restore the project
 
+#   ------->      must have installed typescript 4.9.5 and cordova 11.1.0 before
+
 git clone https://github.com/ossacolsale/CryptPassApp.git
 
 npm update
 
 cordova prepare
+
+node setup-electron.js
 
 #then compile or test the app on your favourite platform with one of the above commands:
 

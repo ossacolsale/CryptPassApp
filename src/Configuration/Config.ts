@@ -114,7 +114,7 @@ class Config {
         const kpPath = await this.getKeyPassPath();
         if (kpPath !== false) {
             const fileContent = await FS.ReadFile(kpPath);
-            return (fileContent !== false && fileContent !== null) ? JSON.parse(fileContent) : false;
+            return (fileContent !== false && fileContent !== null && fileContent.trim() !== '') ? JSON.parse(fileContent) : false;
         }
         else return false;
     }

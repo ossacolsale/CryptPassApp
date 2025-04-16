@@ -24,10 +24,10 @@ interface config {
 interface preferences {
     ChPwdReminder: boolean;
 }
-declare type Sequence = {
+type Sequence = {
     Sequence: number[];
 };
-declare type ConfigStatus = 'OK' | 'FatalError' | 'KO' | 'MissingKeypass' | 'EmptySequence' | 'EmptyKeypass';
+type ConfigStatus = 'OK' | 'FatalError' | 'KO' | 'MissingKeypass' | 'EmptySequence' | 'EmptyKeypass';
 declare class Config {
     protected static readonly defaultPreferences: preferences;
     protected static readonly emptySequence: Sequence;
@@ -53,7 +53,7 @@ declare class Config {
     static selectKeyPassUri(): Promise<string | false>;
     static setKeyPassUri(uri: string): Promise<boolean>;
 }
-declare type configaction = 'NEW' | 'RestoreKeyPassFile' | 'RestoreSequence' | 'InitKeyPassAndSequence';
+type configaction = 'NEW' | 'RestoreKeyPassFile' | 'RestoreSequence' | 'InitKeyPassAndSequence';
 declare class ConfigActions {
     protected _PWD: string;
     protected _CryptPassConfig: ConfigCryptPass;
@@ -72,14 +72,14 @@ declare class ConfigActions {
 }
 declare const StandardRnW: StdWriters;
 declare const handledTypes: readonly ["deviceready", "click", "change", "submit", "focus", "blur", "backbutton", "touchstart", "touchend"];
-declare type HandledTypes = typeof handledTypes[number];
-declare type EventHandlersCollection = {
+type HandledTypes = typeof handledTypes[number];
+type EventHandlersCollection = {
     [key in HandledTypes]: EventHandlers;
 };
-declare type EventHandlers = {
+type EventHandlers = {
     [key: string]: EventHandler;
 };
-declare type EventHandler = (e: Event) => void | Promise<void>;
+type EventHandler = (e: Event) => void | Promise<void>;
 declare class EventsController {
     protected static _events: EventHandlersCollection;
     protected static getEventHandler(name: string, event: HandledTypes): EventHandler;
@@ -98,7 +98,7 @@ declare class ScenarioController {
     protected static delHandlers(): void;
     protected static addHandlers(): void;
 }
-declare type TBackButton = () => any | Promise<any>;
+type TBackButton = () => any | Promise<any>;
 interface ViewModel {
     Init(options?: any): void;
     onBackButton: TBackButton;
@@ -165,7 +165,7 @@ declare class FS {
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
-declare type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationDays';
+type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationDays';
 declare class LocalStorage {
     protected static readonly initialized: string;
     protected static readonly firsttime: string;
@@ -247,7 +247,7 @@ declare class DescrView extends View implements ViewModel {
     protected handleSet(remove?: boolean): Promise<void>;
     Handlers: EventHandlerModel[];
 }
-declare type KOsteps = 'KOStart' | 'Initialize' | 'ProceedInitialization' | 'RestoreAll' | 'Start';
+type KOsteps = 'KOStart' | 'Initialize' | 'ProceedInitialization' | 'RestoreAll' | 'Start';
 declare class MainView extends View {
     onBackButton: TBackButton;
     protected _ca: ConfigActions;
@@ -384,13 +384,13 @@ declare class PassView extends View implements ViewModel {
     protected delOther(counter?: string): void;
     Handlers: EventHandlerModel[];
 }
-declare type PrependNextNum<A extends Array<unknown>> = A["length"] extends infer T ? ((t: T, ...a: A) => void) extends (...x: infer X) => void ? X : never : never;
-declare type EnumerateInternal<A extends Array<unknown>, N extends number> = {
+type PrependNextNum<A extends Array<unknown>> = A["length"] extends infer T ? ((t: T, ...a: A) => void) extends (...x: infer X) => void ? X : never : never;
+type EnumerateInternal<A extends Array<unknown>, N extends number> = {
     0: A;
     1: EnumerateInternal<PrependNextNum<A>, N>;
 }[N extends A["length"] ? 0 : 1];
-declare type Enumerate<N extends number> = EnumerateInternal<[], N> extends (infer E)[] ? E : never;
-declare type SeqIds = `sequence_${Enumerate<26>}`;
+type Enumerate<N extends number> = EnumerateInternal<[], N> extends (infer E)[] ? E : never;
+type SeqIds = `sequence_${Enumerate<26>}`;
 interface RestoreOptions {
     errorMsg?: string;
     desc?: string;

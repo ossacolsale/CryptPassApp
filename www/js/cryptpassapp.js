@@ -177,7 +177,7 @@ class Config {
             const kpPath = yield this.getKeyPassPath();
             if (kpPath !== false) {
                 const fileContent = yield FS.ReadFile(kpPath);
-                return (fileContent !== false && fileContent !== null) ? JSON.parse(fileContent) : false;
+                return (fileContent !== false && fileContent !== null && fileContent.trim() !== '') ? JSON.parse(fileContent) : false;
             }
             else
                 return false;
@@ -1938,7 +1938,6 @@ class PassView extends View {
                         const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.K, true);
                         this.LoaderHide();
                         if (setresult) {
-                            alert('Entry correctly added to your wallet');
                             this.viewEntry(Name);
                         }
                         else {

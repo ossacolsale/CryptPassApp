@@ -488,7 +488,7 @@ class PassView extends View implements ViewModel {
                     const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.K,true);
                     this.LoaderHide();
                     if (setresult) {
-                        alert('Entry correctly added to your wallet');
+                        //alert('Entry correctly added to your wallet');
                         this.viewEntry(Name);
                     } else {
                         alert('Sorry, generic error. Please retry.');
