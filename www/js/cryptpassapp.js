@@ -270,7 +270,7 @@ class ConfigActions {
             if (changed) {
                 this._PWD = newPwd;
                 State.logout();
-                LocalStorage.PasswordExpirationDaysSet(true);
+                LocalStorage.PasswordExpirationTimeSet();
                 return true;
             }
             else
@@ -279,7 +279,9 @@ class ConfigActions {
     }
     needToChangePassword() {
         return __awaiter(this, void 0, void 0, function* () {
-            return (yield Config.getPreferences()).ChPwdReminder && (new Date()).getTime() - this._CryptPassConfig.getLastChange().getTime() > LocalStorage.PasswordExpirationDays() * 86400000;
+            return ((yield Config.getPreferences()).ChPwdReminder &&
+                (LocalStorage.PasswordExpirationTime() > 0 ? Date.now() >= LocalStorage.PasswordExpirationTime()
+                    : (Date.now() - this._CryptPassConfig.getLastChange().getTime()) > this.defaultPasswordExpirationDays * 86400000));
         });
     }
     checkPwd() {
@@ -467,7 +469,10 @@ class View {
         return raw ? val : val.trim();
     }
     focusEl(elId, alsoSelect = false) {
-        this.getEl(elId).focus();
+        const input = this.getEl(elId);
+        input.focus();
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
         if (alsoSelect)
             this.getEl(elId).select();
     }
@@ -801,13 +806,13 @@ class LocalStorage {
     static InitializedKeySet() {
         this._Set('Initialized', this.initialized);
     }
-    static PasswordExpirationDays() {
-        const ped = this._Get('PasswordExpirationDays');
-        return ped == null ? this.passwordexpirationdays : parseInt(ped);
+    static PasswordExpirationTime() {
+        const ped = this._Get('PasswordExpirationTime');
+        return ped == null ? 0 : parseInt(ped);
     }
-    static PasswordExpirationDaysSet(reset = false) {
-        const newVal = reset ? this.passwordexpirationdays : this.PasswordExpirationDays() + this.passwordexpirationdays;
-        this._Set('PasswordExpirationDays', newVal.toString());
+    static PasswordExpirationTimeSet() {
+        const newVal = Date.now() + this.passwordexpirationdays * 86400000;
+        this._Set('PasswordExpirationTime', newVal.toString());
     }
 }
 LocalStorage.initialized = '1';
@@ -1163,8 +1168,8 @@ class MainView extends View {
                         if (State.Password !== '') {
                             if (yield this._ca.needToChangePassword()) {
                                 this.setApp(`<form id="${this.IdChPwdForm}">
-                            <p class="alert alert-danger">Caution! Last time you created or changed your password was more than ${LocalStorage.PasswordExpirationDays()} days ago. 
-                            It's strictly recommended to change your password montly.</p>
+                            <p class="alert alert-danger">Caution! Last time you created or changed or received a reminder to change your password was more than 30 days ago. 
+                            It's useful to change your password montly.</p>
                             <p>${ViewHelpers.password(this.IdPasswordOld, 'Type old password', this.ClassFormCtrl)}</p>        
                             <p>Remember to choose a strong (very strong) password:</p>
                             <p>${ViewHelpers.password(this.IdPassword1, 'Type new password', this.ClassFormCtrl)}</p>
@@ -1269,7 +1274,7 @@ class MainView extends View {
         });
     }
     handleDontChPwd() {
-        LocalStorage.PasswordExpirationDaysSet();
+        LocalStorage.PasswordExpirationTimeSet();
         this.Init();
     }
 }
@@ -1503,6 +1508,7 @@ class PassView extends View {
         this.showHideTagsStatus = 'hide';
         this.searchEntry = '';
         this.CheckedTags = [];
+        this.TagsToRecheck = [];
         this.OtherCounter = 0;
         this.Handlers = [
             { name: 'PassViewClick', handler: (e) => this.onClick(e), type: 'click' },
@@ -1513,7 +1519,9 @@ class PassView extends View {
     }
     Init() {
         return __awaiter(this, void 0, void 0, function* () {
-            console.log(this.CheckedTags, this.searchEntry);
+            this.TagsToRecheck = this.CheckedTags;
+            this.CheckedTags = [];
+            this.showHideTagsStatus = 'hide';
             const passDescr = State.CryptPass.getPassDescription().trim();
             this.OtherCounter = 0;
             const names = State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter);
@@ -1543,8 +1551,13 @@ class PassView extends View {
             }
             this.setApp(out, () => this.clickEl(this.IdLogout));
             this.searchRoutine(names, true);
-            if (this.CheckedTags.length > 0) {
+            if (this.searchEntry !== '')
+                this.focusEl(this.IdSearch);
+            if (this.TagsToRecheck.length > 0) {
                 this.showHideTags();
+                this.TagsToRecheck.forEach(t => {
+                    this.selectTag(t);
+                });
             }
         });
     }
@@ -1662,7 +1675,6 @@ class PassView extends View {
                     this.addTag(el.dataset['tag']);
                 }
                 else if (el.dataset['tagfilter'] !== undefined) {
-                    console.log(el);
                     this.selectTag(el.dataset['tagfilter']);
                 }
                 else if (el.dataset['view'] !== undefined) {
@@ -1711,6 +1723,8 @@ class PassView extends View {
             case undefined:
                 tags = TagHelpers.getAllTags(State.EntriesManage);
                 entries = State.EntriesManage.GetEntryNames();
+                for (let i = 1; i <= tags.length; ++i)
+                    this.getEl('tag' + i).checked = false;
                 this.CheckedTags = [];
                 break;
             default:
@@ -1722,7 +1736,6 @@ class PassView extends View {
                     this.CheckedTags.splice(index, 1);
                 }
                 const ev = TagHelpers.getAllEntriesFromTags(this.CheckedTags, State.EntriesManage);
-                tags = TagHelpers.getAllTagsFromArr(ev);
                 entries = ev.map((val) => val.Name !== undefined ? val.Name : '');
         }
         this.setInner(this.IdEntriesList, this.PrintEntriesName(entries));
@@ -1731,12 +1744,10 @@ class PassView extends View {
         let tagsButtons = new Array();
         let tagCounter = 0;
         tags.forEach((tag) => {
-            const checked = this.CheckedTags.indexOf(tag) != -1;
+            const checked = this.TagsToRecheck.indexOf(tag) != -1;
             let id = ++tagCounter;
             tagsButtons.push(`${ViewHelpers.checkbox('tag' + id, tag, checked, 'btn-check', `data-tagfilter="${tag}"`)}
                 ${ViewHelpers.label('tag' + id, tag, 'my-1 btn btn-primary btn-sm')}`);
-            if (checked)
-                this.selectTag(tag);
         });
         return `TAGS: ${tagsButtons.join(' ')}`;
     }

@@ -75,7 +75,10 @@ abstract class View implements ViewModel {
     }
 
     protected focusEl(elId: string, alsoSelect: boolean = false) {
-        this.getEl(elId).focus();
+        const input = this.getEl(elId) as HTMLInputElement; 
+        input.focus();
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
         if (alsoSelect) (this.getEl(elId) as HTMLInputElement).select();
     }
 

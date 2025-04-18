@@ -40,8 +40,8 @@ class MainView extends View {
                     if (State.Password !== '') {
                         if (await this._ca.needToChangePassword()) {
                             this.setApp(`<form id="${this.IdChPwdForm}">
-                            <p class="alert alert-danger">Caution! Last time you created or changed your password was more than ${LocalStorage.PasswordExpirationDays()} days ago. 
-                            It's strictly recommended to change your password montly.</p>
+                            <p class="alert alert-danger">Caution! Last time you created or changed or received a reminder to change your password was more than 30 days ago. 
+                            It's useful to change your password montly.</p>
                             <p>${ViewHelpers.password(this.IdPasswordOld,'Type old password',this.ClassFormCtrl)}</p>        
                             <p>Remember to choose a strong (very strong) password:</p>
                             <p>${ViewHelpers.password(this.IdPassword1,'Type new password',this.ClassFormCtrl)}</p>
@@ -158,7 +158,7 @@ class MainView extends View {
     }
 
     protected handleDontChPwd() {
-        LocalStorage.PasswordExpirationDaysSet();
+        LocalStorage.PasswordExpirationTimeSet();
         this.Init();
     }
 

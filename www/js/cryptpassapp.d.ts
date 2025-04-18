@@ -165,7 +165,7 @@ declare class FS {
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
-type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationDays';
+type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime';
 declare class LocalStorage {
     protected static readonly initialized: string;
     protected static readonly firsttime: string;
@@ -177,8 +177,8 @@ declare class LocalStorage {
     static FirstTimeSet(): void;
     static InitializedKey(): boolean;
     static InitializedKeySet(): void;
-    static PasswordExpirationDays(): number;
-    static PasswordExpirationDaysSet(reset?: boolean): void;
+    static PasswordExpirationTime(): number;
+    static PasswordExpirationTimeSet(): void;
 }
 declare class SecureStorage {
     static getVal(key: string): Promise<string | false>;
@@ -360,6 +360,7 @@ declare class PassView extends View implements ViewModel {
     protected doVoc(refId: string, action: 'view' | 'copy' | 'cancel'): void;
     protected selectTag(tag?: string): void;
     protected CheckedTags: string[];
+    protected TagsToRecheck: string[];
     protected PrintTags(tags: string[]): string;
     protected PrintEntriesName(entriesName: string[]): string;
     protected onFocus(e: Event): Promise<void>;

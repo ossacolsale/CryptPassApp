@@ -39,13 +39,17 @@ class ConfigActions {
         if (changed) {
             this._PWD = newPwd;
             State.logout();
-            LocalStorage.PasswordExpirationDaysSet(true);
+            LocalStorage.PasswordExpirationTimeSet();
             return true;
         } else return false;
     }
 
     public async needToChangePassword (): Promise<boolean> {
-        return (await Config.getPreferences()).ChPwdReminder && (new Date()).getTime() - this._CryptPassConfig.getLastChange().getTime() > LocalStorage.PasswordExpirationDays() * 86400000;
+        return ((await Config.getPreferences()).ChPwdReminder &&
+        (
+            LocalStorage.PasswordExpirationTime() > 0 ? Date.now() >= LocalStorage.PasswordExpirationTime()
+            : (Date.now() - this._CryptPassConfig.getLastChange().getTime()) > this.defaultPasswordExpirationDays * 86400000)
+        );
     }
 
     public checkPwd (): boolean {

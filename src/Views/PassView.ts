@@ -53,7 +53,9 @@ class PassView extends View implements ViewModel {
 
 
     async Init() {
-        console.log(this.CheckedTags, this.searchEntry);//paperino
+        // reset tags situation
+        this.TagsToRecheck = this.CheckedTags;
+        this.CheckedTags = []; this.showHideTagsStatus = 'hide';
         
         const passDescr = State.CryptPass.getPassDescription().trim();
         this.OtherCounter = 0;
@@ -83,8 +85,13 @@ class PassView extends View implements ViewModel {
         }
         this.setApp(out,() => this.clickEl(this.IdLogout));
         this.searchRoutine(names, true);
-        if (this.CheckedTags.length > 0) {
+        if (this.searchEntry !== '')
+            this.focusEl(this.IdSearch);
+        if (this.TagsToRecheck.length > 0) {
             this.showHideTags();
+            this.TagsToRecheck.forEach( t => {
+                this.selectTag(t)
+            });
         }
     }
 
@@ -205,7 +212,6 @@ class PassView extends View implements ViewModel {
             } else if (el.dataset['tag'] !== undefined) {
                 this.addTag(el.dataset['tag']);
             } else if (el.dataset['tagfilter'] !== undefined) {
-                console.log(el);
                 this.selectTag(el.dataset['tagfilter']);
             } else if (el.dataset['view'] !== undefined) {
                 this.doVoc(el.dataset['view'],'view');
@@ -254,6 +260,8 @@ class PassView extends View implements ViewModel {
             case undefined:
                 tags = TagHelpers.getAllTags(State.EntriesManage);
                 entries = State.EntriesManage.GetEntryNames();
+                for (let i = 1; i<=tags.length; ++i)
+                    (this.getEl('tag'+i) as HTMLInputElement).checked = false;
                 this.CheckedTags = [];
             break;
             default:
@@ -264,7 +272,7 @@ class PassView extends View implements ViewModel {
                     this.CheckedTags.splice(index,1);
                 }
                 const ev = TagHelpers.getAllEntriesFromTags(this.CheckedTags,State.EntriesManage);
-                tags = TagHelpers.getAllTagsFromArr(ev);
+                //tags = TagHelpers.getAllTagsFromArr(ev);
                 entries = ev.map( 
                     (val) => val.Name !== undefined ? val.Name : ''
                 );  
@@ -274,18 +282,17 @@ class PassView extends View implements ViewModel {
     }
 
     protected CheckedTags: string[] = [];
+    protected TagsToRecheck: string[] = [];
 
     protected PrintTags (tags: string[]) {
         let tagsButtons = new Array<string>();
         let tagCounter = 0;
         tags.forEach(
             (tag) => {
-                const checked = this.CheckedTags.indexOf(tag) != -1;
+                const checked = this.TagsToRecheck.indexOf(tag) != -1;
                 let id = ++tagCounter;
                 tagsButtons.push(`${ViewHelpers.checkbox('tag'+id,tag,checked,'btn-check',`data-tagfilter="${tag}"`)}
-                ${ViewHelpers.label('tag'+id,tag,'my-1 btn btn-primary btn-sm')}`);
-                if (checked)
-                    this.selectTag(tag);
+                ${ViewHelpers.label('tag'+id,tag,'my-1 btn btn-primary btn-sm')}`);         
             }
         )
         return `TAGS: ${tagsButtons.join(' ')}`;

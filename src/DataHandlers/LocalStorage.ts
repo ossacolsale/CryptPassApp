@@ -1,4 +1,4 @@
-type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationDays';
+type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime';
 
 class LocalStorage {
 
@@ -34,14 +34,14 @@ class LocalStorage {
         this._Set('Initialized',this.initialized);
     }
 
-    public static PasswordExpirationDays(): number {
-        const ped = this._Get('PasswordExpirationDays');
-        return ped == null ? this.passwordexpirationdays : parseInt(ped);
+    public static PasswordExpirationTime(): number {
+        const ped = this._Get('PasswordExpirationTime');
+        return ped == null ? 0 : parseInt(ped);
     }
 
-    public static PasswordExpirationDaysSet(reset: boolean = false) {
-        const newVal = reset ? this.passwordexpirationdays : this.PasswordExpirationDays() + this.passwordexpirationdays;
-        this._Set('PasswordExpirationDays',newVal.toString());
+    public static PasswordExpirationTimeSet() {
+        const newVal = Date.now() + this.passwordexpirationdays * 86400000;
+        this._Set('PasswordExpirationTime',newVal.toString());
     }
 }
 
