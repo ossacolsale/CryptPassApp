@@ -6,6 +6,7 @@ class OtherView extends View implements ViewModel {
 
 
     protected readonly IdPreferences: string = 'Preferences';
+    protected readonly IdAbout: string = 'About';
     protected readonly IdRestore: string = 'Restore';
     protected readonly IdChangePwd: string = 'ChangePwd';
     protected readonly IdViewSequence: string = 'ViewSequence';
@@ -46,6 +47,7 @@ class OtherView extends View implements ViewModel {
         ${ViewHelpers.button(this.IdRestore,'Restore/reset wallet',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions,'Read instructions',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangeDescr,passDescr==''?'Add a description to your wallet':'Change description to your wallet',this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdAbout,'About author',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu,'Go back',this.ClassFormBtnSec)}
         </div>
         `,() => this.clickEl(this.IdGoToMainMenu));
@@ -95,8 +97,20 @@ class OtherView extends View implements ViewModel {
             case this.IdChangePwd:
                 await this.changePassword();
                 break;
+            case this.IdAbout:
+                this.showAbout();
+                break;
 
         }
+    }
+
+    private showAbout() {
+        this.setApp(`<h2>About author</h2>
+            <p>CryptPassApp is Developed by<p>
+            <p><strong>Giancarlo Mangiagli</strong></p>
+            <p>www.giancarlomangiagli.it</p>
+            <p>${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)}</p>
+            `, () => this.clickEl(this.IdGoToInit));
     }
 
     protected async onSubmit(e: Event) {
@@ -130,10 +144,11 @@ class OtherView extends View implements ViewModel {
     }
 
     protected async SavePreferences() {
-        alert (this.getVal(this.IdChPwdRemind));
-        this.preferences.ChPwdReminder = this.getVal(this.IdChPwdRemind) === this.RemindValue;
-
-        //const saved = await Config.setPreferences(this.preferences);
+        this.preferences.ChPwdReminder = this.isChecked(this.IdChPwdRemind);
+        const saved = await Config.setPreferences(this.preferences);
+        if (saved)
+            this.Init();
+        else alert('Error when saving preferences. Please retry.');
     }
 
     protected async changePassword() {

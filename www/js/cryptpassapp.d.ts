@@ -276,6 +276,7 @@ declare class OtherView extends View implements ViewModel {
     protected readonly IdGoToInit: string;
     protected readonly IdGoToMainMenu: string;
     protected readonly IdPreferences: string;
+    protected readonly IdAbout: string;
     protected readonly IdRestore: string;
     protected readonly IdChangePwd: string;
     protected readonly IdViewSequence: string;
@@ -297,6 +298,7 @@ declare class OtherView extends View implements ViewModel {
     protected preferences: preferences;
     Init(): Promise<void>;
     protected onClick(e: Event): Promise<void>;
+    private showAbout;
     protected onSubmit(e: Event): Promise<void>;
     protected ViewPreferences(): Promise<void>;
     protected SavePreferences(): Promise<void>;

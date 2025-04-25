@@ -1284,6 +1284,7 @@ class OtherView extends View {
         this.IdGoToInit = 'goToInit';
         this.IdGoToMainMenu = 'goToMainMenu';
         this.IdPreferences = 'Preferences';
+        this.IdAbout = 'About';
         this.IdRestore = 'Restore';
         this.IdChangePwd = 'ChangePwd';
         this.IdViewSequence = 'ViewSequence';
@@ -1319,6 +1320,7 @@ class OtherView extends View {
         ${ViewHelpers.button(this.IdRestore, 'Restore/reset wallet', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions, 'Read instructions', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangeDescr, passDescr == '' ? 'Add a description to your wallet' : 'Change description to your wallet', this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdAbout, 'About author', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu, 'Go back', this.ClassFormBtnSec)}
         </div>
         `, () => this.clickEl(this.IdGoToMainMenu));
@@ -1370,8 +1372,19 @@ class OtherView extends View {
                 case this.IdChangePwd:
                     yield this.changePassword();
                     break;
+                case this.IdAbout:
+                    this.showAbout();
+                    break;
             }
         });
+    }
+    showAbout() {
+        this.setApp(`<h2>About author</h2>
+            <p>CryptPassApp is Developed by<p>
+            <p><strong>Giancarlo Mangiagli</strong></p>
+            <p>www.giancarlomangiagli.it</p>
+            <p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
+            `, () => this.clickEl(this.IdGoToInit));
     }
     onSubmit(e) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -1407,8 +1420,12 @@ class OtherView extends View {
     }
     SavePreferences() {
         return __awaiter(this, void 0, void 0, function* () {
-            alert(this.getVal(this.IdChPwdRemind));
-            this.preferences.ChPwdReminder = this.getVal(this.IdChPwdRemind) === this.RemindValue;
+            this.preferences.ChPwdReminder = this.isChecked(this.IdChPwdRemind);
+            const saved = yield Config.setPreferences(this.preferences);
+            if (saved)
+                this.Init();
+            else
+                alert('Error when saving preferences. Please retry.');
         });
     }
     changePassword() {
