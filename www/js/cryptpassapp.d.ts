@@ -180,6 +180,7 @@ declare class LocalStorage {
     static PasswordExpirationTime(): number;
     static PasswordExpirationTimeSet(): void;
 }
+declare const secureStorage: SecureStorageInstance;
 declare class SecureStorage {
     static getVal(key: string): Promise<string | false>;
     static setVal(key: string, value: string): Promise<string | false>;

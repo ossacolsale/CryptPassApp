@@ -1,3 +1,10 @@
+// Creazione istanza (nome arbitrario, es. 'cryptpass_store')
+const secureStorage: SecureStorageInstance = new cordova.plugins.SecureStorage(
+    function () { console.log('Secure Storage inizializzato'); },
+    function (error) { console.error('Errore inizializzazione Secure Storage:', error); },
+    'cryptpass_store' // <--- Nome del namespace delle tue chiavi
+);
+
 
 class SecureStorage {
 
@@ -8,8 +15,23 @@ class SecureStorage {
                     const val = window.localStorage.getItem(key);
                     return val === null ? false : val;
                 case 'android':
-                    return new Promise((resolve, reject)=> {
+                    /*return new Promise((resolve, reject)=> {
                         cordova.plugins.SecureKeyStore.get(resolve, reject, key);
+                    });*/
+                    return new Promise((resolve, reject) => {
+                        secureStorage.get(
+                            function (value) { 
+                                resolve(value); 
+                            },
+                            function (error) { 
+                                if (error && error.message && error.message.indexOf('not found') !== -1) {
+                                    resolve(false); // Nessuna config trovata
+                                } else {
+                                    reject(error);
+                                }
+                            },
+                            key
+                        );
                     });
                 default:
                     return false;
@@ -27,8 +49,22 @@ class SecureStorage {
                     window.localStorage.setItem(key, value);
                     return key;
                 case 'android':
+                    /*
                     return new Promise((resolve, reject)=> {
                         cordova.plugins.SecureKeyStore.set(resolve, reject, key, value);
+                    });*/
+                    return new Promise((resolve, reject) => {
+                        secureStorage.set(
+                            function (key) { 
+                                resolve(key); 
+                            },
+                            function (error) { 
+                                console.error('Errore salvataggio sicuro:', error);
+                                reject(error); 
+                            },
+                            key,
+                            value
+                        );
                     });
                 default:
                     return false;

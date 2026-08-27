@@ -818,6 +818,7 @@ class LocalStorage {
 LocalStorage.initialized = '1';
 LocalStorage.firsttime = '0';
 LocalStorage.passwordexpirationdays = 30;
+const secureStorage = new cordova.plugins.SecureStorage(function () { console.log('Secure Storage inizializzato'); }, function (error) { console.error('Errore inizializzazione Secure Storage:', error); }, 'cryptpass_store');
 class SecureStorage {
     static getVal(key) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -828,7 +829,16 @@ class SecureStorage {
                         return val === null ? false : val;
                     case 'android':
                         return new Promise((resolve, reject) => {
-                            cordova.plugins.SecureKeyStore.get(resolve, reject, key);
+                            secureStorage.get(function (value) {
+                                resolve(value);
+                            }, function (error) {
+                                if (error && error.message && error.message.indexOf('not found') !== -1) {
+                                    resolve(false);
+                                }
+                                else {
+                                    reject(error);
+                                }
+                            }, key);
                         });
                     default:
                         return false;
@@ -848,7 +858,12 @@ class SecureStorage {
                         return key;
                     case 'android':
                         return new Promise((resolve, reject) => {
-                            cordova.plugins.SecureKeyStore.set(resolve, reject, key, value);
+                            secureStorage.set(function (key) {
+                                resolve(key);
+                            }, function (error) {
+                                console.error('Errore salvataggio sicuro:', error);
+                                reject(error);
+                            }, key, value);
                         });
                     default:
                         return false;
@@ -1155,7 +1170,13 @@ class MainView extends View {
         return __awaiter(this, void 0, void 0, function* () {
             this._ca = new ConfigActions(State.Password);
             this._aa = new AppActions();
-            const status = yield this._ca.getStatus();
+            let status = 'FatalError';
+            try {
+                status = yield this._ca.getStatus();
+            }
+            catch (e) {
+                CommonHelpers.StandardError(e);
+            }
             switch (status) {
                 case 'KO':
                     ScenarioController.changeScenario(new RestoreView(), {
@@ -1210,6 +1231,11 @@ class MainView extends View {
                 case 'EmptyKeypass':
                     ScenarioController.changeScenario(new RestoreView(), {
                         errorMsg: 'Error. Keypass file is empty! How do you want to proceed?', status: status
+                    });
+                    break;
+                case 'FatalError':
+                    ScenarioController.changeScenario(new RestoreView(), {
+                        errorMsg: 'Fatal/unknown error. Try to restore data.', status: status
                     });
                     break;
             }
@@ -2289,7 +2315,13 @@ class RestoreView extends View {
                     else {
                         this._ca = new ConfigActions(pwd1);
                         this.LoaderShow();
-                        const configured = yield this._ca.setup('NEW');
+                        let configured = false;
+                        try {
+                            configured = yield this._ca.setup('NEW');
+                        }
+                        catch (e) {
+                            configured = CommonHelpers.StandardError(e);
+                        }
                         this.LoaderHide();
                         if (configured) {
                             this.setApp(`<p>Configuration done.</p>

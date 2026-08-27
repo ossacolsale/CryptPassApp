@@ -26,7 +26,12 @@ class MainView extends View {
         this._ca = new ConfigActions(State.Password);
         this._aa = new AppActions();
 
-        const status = await this._ca.getStatus();
+        let status: ConfigStatus = 'FatalError';
+        try {
+            status = await this._ca.getStatus();
+        } catch(e) {
+            CommonHelpers.StandardError(e);
+        }
 
         switch(status) {
             case 'KO':
@@ -98,6 +103,11 @@ class MainView extends View {
             case 'EmptyKeypass':
                 ScenarioController.changeScenario(new RestoreView(), {
                     errorMsg: 'Error. Keypass file is empty! How do you want to proceed?', status: status
+                } as RestoreOptions);
+            break;
+            case 'FatalError':
+                ScenarioController.changeScenario(new RestoreView(), {
+                    errorMsg: 'Fatal/unknown error. Try to restore data.', status: status
                 } as RestoreOptions);
             break;
         }

@@ -106,3 +106,77 @@ interface EntryView extends EntryValue {
     DateStr?: string;
 }
 
+interface SecureStorageInstance {
+    /**
+     * Recupera un valore dallo storage sicuro.
+     * @param successCallback Funzione chiamata con il valore recuperato (stringa)
+     * @param errorCallback Funzione chiamata in caso di errore (es. "Key not found")
+     * @param key La chiave da cercare
+     */
+    get(
+        successCallback: (value: string) => void,
+        errorCallback: (error: any) => void,
+        key: string
+    ): void;
+
+    /**
+     * Salva un valore nello storage sicuro.
+     * @param successCallback Funzione chiamata con la chiave salvata in caso di successo
+     * @param errorCallback Funzione chiamata in caso di errore
+     * @param key La chiave
+     * @param value Il valore (stringa)
+     */
+    set(
+        successCallback: (key: string) => void,
+        errorCallback: (error: any) => void,
+        key: string,
+        value: string
+    ): void;
+
+    /**
+     * Rimuove un valore dallo storage.
+     * @param successCallback Funzione chiamata con la chiave rimossa
+     * @param errorCallback Funzione chiamata in caso di errore
+     * @param key La chiave da rimuovere
+     */
+    remove(
+        successCallback: (key: string) => void,
+        errorCallback: (error: any) => void,
+        key: string
+    ): void;
+
+    /**
+     * (Opzionale) Ottiene la lista di tutte le chiavi salvate in questo namespace
+     */
+    keys(
+        successCallback: (keys: string[]) => void,
+        errorCallback: (error: any) => void
+    ): void;
+
+    /**
+     * (Opzionale) Cancella tutto il contenuto di questo namespace
+     */
+    clear(
+        successCallback: () => void,
+        errorCallback: (error: any) => void
+    ): void;
+}
+
+/**
+ * Interfaccia per il Costruttore
+ * Definisce come si fa il "new"
+ */
+interface SecureStorageConstructor {
+    new (
+        successCallback: () => void,
+        errorCallback: (error: any) => void,
+        namespace: string
+    ): SecureStorageInstance;
+}
+
+/**
+ * Estensione dell'interfaccia globale dei plugin di Cordova
+ */
+interface CordovaPlugins {
+    SecureStorage: SecureStorageConstructor;
+}

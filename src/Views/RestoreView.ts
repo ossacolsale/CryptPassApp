@@ -235,7 +235,12 @@ class RestoreView extends View implements ViewModel {
                 } else {
                     this._ca = new ConfigActions(pwd1);
                     this.LoaderShow();
-                    const configured = await this._ca.setup('NEW');
+                    let configured = false;
+                    try {
+                        configured = await this._ca.setup('NEW');
+                    } catch (e) {
+                        configured = CommonHelpers.StandardError(e);
+                    }
                     this.LoaderHide();
                     if (configured) {
     this.setApp(`<p>Configuration done.</p>
