@@ -8,9 +8,9 @@ CryptPass App is a Cordova password wallet for Android, Linux and Windows. Vault
 |---|---|---|---|---|---|
 | Linux | Yes: `.deb` and `.zip` | No interactive launch test | Electron native open/save dialogs; opaque main-process handles | Electron `safeStorage` | `safeStorage` requires an available OS-backed encryption provider; initialization fails closed otherwise. |
 | Windows | Yes: NSIS installer and `.zip` | No Windows runtime test | Electron native open/save dialogs; opaque main-process handles | Electron `safeStorage` | Unsigned development builds are supported; configure certificate settings for signed releases. |
-| Android | Build not verified here | No device/provider test | SAF document URIs and persisted URI permissions | Android secure-storage plugin | Cloud `DocumentProvider` behavior depends on the provider; revoked permissions require the user to reselect/relink the vault. |
+| Android | Build could not complete here | No device/provider test | SAF document URIs and persisted URI permissions | Android secure-storage plugin | Cloud `DocumentProvider` behavior depends on the provider; SDK Platform 36 could not be installed because `/lib/android-sdk` is not writable in the build environment, and device/provider behavior still needs testing. |
 
-The Linux build produced `com.cryptpass.app_1.1.4_amd64.deb` and `com.cryptpass.app-1.1.4.zip`. The Windows build produced `CryptPassApp Setup 1.1.4.exe` and `CryptPassApp-1.1.4-win.zip`. These are build results, not a claim of interactive runtime verification on those platforms.
+The Electron build generates the `.deb`, Linux `.zip`, Windows NSIS installer and Windows `.zip` in `platforms/electron/build/`. These build results do not imply an interactive runtime test on Linux or Windows.
 
 ## Build and test
 
@@ -33,7 +33,7 @@ On Linux and Windows, choose **New vault** to open the native save dialog and cr
 
 On Android, choose a vault using the system document picker. The app retains the document URI and persistable access grant where the provider supports them. If a provider revokes access or replaces the document, reselect the intended vault through the restore/relink flow. SAF providers do not guarantee atomic replacement, and cloud-provider behavior needs device testing.
 
-The app pins CryptPass `0.1.0` at commit `aa2d9e5800d1c797403f2d0428a1e4217abd32bf`. Existing legacy vaults can be opened through the library's compatibility reader. A successful save through the password-based API rewrites the vault in the authenticated format. This application change does not migrate vaults until the user successfully saves them.
+The app pins CryptPass `0.1.0` at commit `aa2d9e5800d1c797403f2d0428a1e4217abd32bf`. Existing legacy vaults can be opened through the library's compatibility reader. A successful save through the password-based API rewrites the vault in the authenticated format. Legacy vault format migration happens when the user successfully saves them. Existing single-wallet application settings migrate into a local wallet profile at startup after the new profile record is written and verified.
 
 ## Security behavior and limits
 
@@ -41,4 +41,4 @@ Electron disables renderer Node integration, isolates the context, validates cus
 
 The inactivity lock defaults to five minutes and also responds to background/pause events. Copied secrets are scheduled for clipboard cleanup after 60 seconds; cleanup compares clipboard contents first where the platform permits. JavaScript cannot guarantee zeroization of strings already copied by the runtime, and some clipboard APIs do not allow safe comparison.
 
-This release still supports one wallet profile at a time. Multi-wallet management and localized English/Italian resources have not been implemented; the current interface remains English. Electron's `sandbox` is disabled because the Cordova preload integration requires its local plugin bridge; Node integration remains disabled and context isolation remains enabled. No antivirus disabling or installation-directory whitelisting is required or recommended.
+The application supports multiple local wallet profiles. Each profile stores its own file handle and recovery sequence inside OS-backed secure storage; removing a profile never deletes its vault file. Existing single-wallet settings migrate on first launch, after the new profile record is verified. The interface, alerts, confirmation prompts, placeholders and wallet-management screens are available in English and Italian. The app detects the system/browser language on first launch and remembers a manually selected language. User-provided wallet names, descriptions and entry data remain in the language entered; native operating-system dialogs follow the system language. Electron's `sandbox` is disabled because the Cordova preload integration requires its local plugin bridge; Node integration remains disabled and context isolation remains enabled. No antivirus disabling or installation-directory whitelisting is required or recommended.

@@ -35,7 +35,7 @@ class Config {
     }
 
     protected static async setConfig (cfg: config): Promise<boolean> {
-        return await SecureStorage.setVal(this.configName,JSON.stringify(cfg)) !== false;
+        return WalletProfiles.commitActiveConfig(JSON.stringify(cfg));
     }
 
     protected static async getConfig (): Promise<config | false> {

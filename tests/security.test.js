@@ -61,10 +61,9 @@ test('Electron renderer has no arbitrary filesystem IPC and main validates IPC s
     assert.match(setup, /safeStorage\.encryptString/);
 });
 
-test('Electron secure storage only accepts the whitelisted configuration key', () => {
+test('Electron secure storage only accepts named app configuration and profile keys', () => {
     const setup = source('setup-electron.js');
-    assert.match(setup, /key === 'cryptPassCfg'/);
-    assert.match(setup, /key !== 'cryptPassCfg'/);
+    assert.match(setup, /\['cryptPassCfg', 'cryptPassWalletProfiles'\]\.includes\(key\)/);
     assert.match(setup, /safeStorage\.isEncryptionAvailable\(\)/);
     assert.match(source('src/DataHandlers/SecureStorage.ts'), /secureGet\(key\)/);
     assert.match(source('src/DataHandlers/SecureStorage.ts'), /secureSet\(key, value\)/);
@@ -85,4 +84,40 @@ test('legacy vault entry saves use the new password based migration path', () =>
     const passView = source('src/Views/PassView.ts');
     assert.match(passView, /SetEntries\(State\.EntriesManage\.Export\(\),State\.Password\)/);
     assert.doesNotMatch(passView, /SetEntries\([^\n]*State\.K,true/);
+});
+
+
+test('English and Italian locales have matching keys and missing values fall back to English', () => {
+    const en = JSON.parse(source('locales/en.json'));
+    const it = JSON.parse(source('locales/it.json'));
+    assert.deepEqual(Object.keys(it).sort(), Object.keys(en).sort());
+    assert.ok(Object.values(it).every(value => typeof value === 'string' && value.length > 0));
+    const localeCallSites = source('src/Helpers/ViewHelpers.ts') + source('src/Views/PassView.ts') + source('src/Views/WalletProfilesView.ts');
+    const referencedKeys = [...localeCallSites.matchAll(/Localization\.text\('([^']+)'\)/g)].map(match => match[1]);
+    for (const key of referencedKeys) assert.ok(Object.hasOwn(en, key), `missing English translation for ${key}`);
+    const localization = source('src/Helpers/Localization.ts');
+    assert.ok(localization.includes('window.CRYPTPASS_LOCALES?.en?.[key] || key'));
+});
+
+test('Italian localization translates UI text and alerts, preserves marked wallet data and leaves user values untouched', () => {
+    const dom = new JSDOM('<main><h2>Other options</h2><p translate="no">Wallets</p><input placeholder="Type password" value="Password"></main>', { url: 'https://app.test' });
+    const localeMap = { en: JSON.parse(source('locales/en.json')), it: JSON.parse(source('locales/it.json')) };
+    dom.window.CRYPTPASS_LOCALES = localeMap;
+    const alerts = [];
+    dom.window.alert = message => alerts.push(message);
+    const context = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, NodeFilter: dom.window.NodeFilter };
+    const output = ts.transpileModule(source('src/Helpers/Localization.ts'), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    vm.runInNewContext(output + '\nglobalThis.__localization = Localization;', context);
+    const localization = context.__localization;
+    localization.initialize();
+    localization.setLanguage('it', false);
+    localization.apply(dom.window.document.querySelector('main'));
+    dom.window.alert('Wrong password!');
+    assert.equal(dom.window.document.querySelector('h2').textContent, 'Altre opzioni');
+    assert.equal(dom.window.document.querySelector('[translate="no"]').textContent, 'Wallets');
+    assert.equal(dom.window.document.querySelector('input').placeholder, 'Inserisci la password');
+    assert.equal(dom.window.document.querySelector('input').value, 'Password');
+    assert.deepEqual(alerts, ['Password errata!']);
+    delete localeMap.it['other.title'];
+    assert.equal(localization.text('other.title'), 'Other options');
 });

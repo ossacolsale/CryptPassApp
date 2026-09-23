@@ -8,6 +8,7 @@ interface CryptPassDesktopAPI {
     createVault(name: string, content: string): Promise<string | false>;
     readVault(handle: string): Promise<string | false>;
     saveVault(handle: string, content: string): Promise<boolean>;
+    secureStorageStatus(): Promise<{ available: boolean; backend: string }>;
     secureGet(key: string): Promise<string | false>;
     secureSet(key: string, value: string): Promise<string | false>;
     secureDelete(key: string): Promise<string | false>;

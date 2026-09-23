@@ -12,22 +12,22 @@ const { safeStorage, dialog } = require('electron');
 const crypto = require('crypto');
 const cryptPassVaults = new Map();
 const cryptPassSecureFile = path.join(app.getPath('userData'), 'cryptpass-secure.bin');
-let cryptPassSecureValues = { cryptPassCfg: null };
+let cryptPassSecureValues = { values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} };
 let cryptPassReady = Promise.resolve().then(() => {
     try {
         if (fs.existsSync(cryptPassSecureFile) && cryptPassHasStrongStorage()) {
             const encrypted = fs.readFileSync(cryptPassSecureFile);
             cryptPassSecureValues = JSON.parse(safeStorage.decryptString(encrypted));
             if (!cryptPassSecureValues || typeof cryptPassSecureValues !== 'object') throw new Error('invalid store');
-            cryptPassSecureValues.values = cryptPassSecureValues.values || { cryptPassCfg: null };
+            cryptPassSecureValues.values = cryptPassSecureValues.values || { cryptPassCfg: null, cryptPassWalletProfiles: null };
             cryptPassSecureValues.vaults = cryptPassSecureValues.vaults || {};
             for (const [id, filePath] of Object.entries(cryptPassSecureValues.vaults)) cryptPassVaults.set(id, filePath);
         }
     } catch (_) {
-        cryptPassSecureValues = { values: { cryptPassCfg: null }, vaults: {} };
+        cryptPassSecureValues = { values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} };
         throw new Error('Secure storage unavailable or unreadable');
     }
-    if (!cryptPassSecureValues.values) cryptPassSecureValues = { values: { cryptPassCfg: null }, vaults: {} };
+    if (!cryptPassSecureValues.values) cryptPassSecureValues = { values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} };
     if (!cryptPassSecureValues.vaults) cryptPassSecureValues.vaults = {};
 });
 
@@ -101,21 +101,25 @@ cryptPassHandle('cryptpass:saveVault', async (handle, content) => {
     if (!filePath || typeof content !== 'string') return false;
     return cryptPassWriteAtomically(filePath, content);
 });
+cryptPassHandle('cryptpass:secureStorageStatus', async () => ({
+    available: safeStorage.isEncryptionAvailable(),
+    backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform
+}));
 cryptPassHandle('cryptpass:secureGet', async (key) => {
     await cryptPassReady;
-    return key === 'cryptPassCfg' ? (cryptPassSecureValues.values.cryptPassCfg || false) : false;
+    return ['cryptPassCfg', 'cryptPassWalletProfiles'].includes(key) ? (cryptPassSecureValues.values[key] || false) : false;
 });
 cryptPassHandle('cryptpass:secureSet', async (key, value) => {
     await cryptPassReady;
-    if (key !== 'cryptPassCfg' || typeof value !== 'string') return false;
-    cryptPassSecureValues.values.cryptPassCfg = value;
+    if (!['cryptPassCfg', 'cryptPassWalletProfiles'].includes(key) || typeof value !== 'string') return false;
+    cryptPassSecureValues.values[key] = value;
     await cryptPassPersist();
     return key;
 });
 cryptPassHandle('cryptpass:secureDelete', async (key) => {
     await cryptPassReady;
-    if (key !== 'cryptPassCfg') return false;
-    cryptPassSecureValues.values.cryptPassCfg = null;
+    if (!['cryptPassCfg', 'cryptPassWalletProfiles'].includes(key)) return false;
+    cryptPassSecureValues.values[key] = null;
     await cryptPassPersist();
     return key;
 });
@@ -143,6 +147,7 @@ contextBridge.exposeInMainWorld('cryptPassDesktop', {
     createVault: (name, content) => ipcRenderer.invoke('cryptpass:createVault', name, content),
     readVault: (handle) => ipcRenderer.invoke('cryptpass:readVault', handle),
     saveVault: (handle, content) => ipcRenderer.invoke('cryptpass:saveVault', handle, content),
+    secureStorageStatus: () => ipcRenderer.invoke('cryptpass:secureStorageStatus'),
     secureGet: (key) => ipcRenderer.invoke('cryptpass:secureGet', key),
     secureSet: (key, value) => ipcRenderer.invoke('cryptpass:secureSet', key, value),
     secureDelete: (key) => ipcRenderer.invoke('cryptpass:secureDelete', key),
@@ -160,8 +165,11 @@ try {
     main = main.replace(/\nipcMain\.handle\('fsread'[\s\S]*?require\('electron'\)\.Menu\.setApplicationMenu\(null\);\s*/, '\n');
     main = main.replace("ipcMain.handle('cdv-plugin-exec', async (_, serviceName, action, ...args) => {", "ipcMain.handle('cdv-plugin-exec', async (event, serviceName, action, ...args) => {\n    cryptPassAssertSender(event);");
     preload = preload.replace(/\ncontextBridge\.exposeInMainWorld\('fs',[\s\S]*?\n\}\);\s*/, '\n');
-    if (!main.includes("CryptPass narrow desktop API")) main += mainAppend;
-    if (!preload.includes("contextBridge.exposeInMainWorld('cryptPassDesktop'")) preload += preloadAppend;
+    const mainAppendStart = main.indexOf('// CryptPass narrow desktop API.');
+    if (mainAppendStart === -1) main += mainAppend;
+    else main = main.slice(0, mainAppendStart) + mainAppend;
+    preload = preload.replace(/\ncontextBridge\.exposeInMainWorld\('cryptPassDesktop',[\s\S]*?\n\}\);\s*/, '\n');
+    preload += preloadAppend;
     fs.writeFileSync(mainPath, main);
     fs.writeFileSync(preloadPath, preload);
     console.log('Electron security boundary configured');

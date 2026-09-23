@@ -59,8 +59,8 @@ class RestoreView extends View implements ViewModel {
     protected readonly IdConfirm : string = 'Confirm';
     protected readonly IdStartUsingCryptpass: string = 'StartUsingCryptpass';
     protected readonly PrefixSequenceButton: string = 'sequence_';
-    protected readonly DefaultNoFile: string = 'No file selected';
-    protected readonly DefaultNoSequence: string = 'No sequence selected';
+    protected readonly DefaultNoFile: string = Localization.text('ui.noFileSelected');
+    protected readonly DefaultNoSequence: string = Localization.text('ui.noSequenceSelected');
     
 
     async Init(options?: RestoreOptions) {
@@ -249,9 +249,7 @@ class RestoreView extends View implements ViewModel {
 
     <p class="h3">${this._ca.getSequence().join(', ')}</p>
 
-     <p class="alert alert-danger">Now, please make a note or a screenshot of this number sequence (in correct order).
-     Remember anyway that this sequence of numbers can also be displayed at a later time through the appropriate menu item 
-     (<strong>best before you reset or lost your device...</strong>)</p>
+     <p class="alert alert-danger">${Localization.text('ui.recordSequence')} (<strong>${Localization.text('ui.beforeReset')}</strong>)</p>
      <p>${ViewHelpers.button(this.IdStartUsingCryptpass,'Start using CryptPassApp',this.ClassFormBtn)}</p>
 
     `);

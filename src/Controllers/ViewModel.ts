@@ -55,6 +55,7 @@ abstract class View implements ViewModel {
 
     protected setMarkup(elId: string, content: string) {
         $('#'+elId).html(content);
+        Localization.apply(this.getEl(elId));
     }
 
     protected getText(elId: string): string {
@@ -63,7 +64,7 @@ abstract class View implements ViewModel {
 
     protected setText(elId: string, content: string): void {
         const element = this.getEl(elId);
-        element.textContent = content;
+        element.textContent = Localization.translate(content);
     }
 
     protected getEl(elId: string): HTMLElement {

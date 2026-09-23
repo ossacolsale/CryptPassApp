@@ -1,9 +1,17 @@
-// Creazione istanza (nome arbitrario, es. 'cryptpass_store')
-const secureStorage: SecureStorageInstance = new cordova.plugins.SecureStorage(
-    function () { /* Initialization completed. */ },
-    function () { /* Secure storage errors are handled at the call site. */ },
-    'cryptpass_store' // <--- Nome del namespace delle tue chiavi
-);
+// The Cordova plugin is available on Android; Electron uses the desktop preload bridge.
+// Instantiate lazily so Electron never asks Cordova for a missing plugin proxy.
+let androidSecureStorage: SecureStorageInstance | undefined;
+
+function getAndroidSecureStorage(): SecureStorageInstance {
+    if (!androidSecureStorage) {
+        androidSecureStorage = new cordova.plugins.SecureStorage(
+            function () { /* Initialization completed. */ },
+            function () { /* Secure storage errors are handled at the call site. */ },
+            'cryptpass_store'
+        );
+    }
+    return androidSecureStorage;
+}
 
 
 class SecureStorage {
@@ -27,7 +35,7 @@ class SecureStorage {
                         cordova.plugins.SecureKeyStore.get(resolve, reject, key);
                     });*/
                     return new Promise((resolve, reject) => {
-                        secureStorage.get(
+                        getAndroidSecureStorage().get(
                             function (value) { 
                                 resolve(value); 
                             },
@@ -61,7 +69,7 @@ class SecureStorage {
                         cordova.plugins.SecureKeyStore.set(resolve, reject, key, value);
                     });*/
                     return new Promise((resolve, reject) => {
-                        secureStorage.set(
+                        getAndroidSecureStorage().set(
                             function (key) { 
                                 resolve(key); 
                             },

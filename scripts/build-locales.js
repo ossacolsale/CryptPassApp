@@ -1,0 +1,10 @@
+const fs = require('fs');
+const path = require('path');
+const root = path.join(__dirname, '..');
+const english = JSON.parse(fs.readFileSync(path.join(root, 'locales/en.json'), 'utf8'));
+const italian = JSON.parse(fs.readFileSync(path.join(root, 'locales/it.json'), 'utf8'));
+const englishKeys = Object.keys(english).sort();
+const italianKeys = Object.keys(italian).sort();
+if (JSON.stringify(englishKeys) !== JSON.stringify(italianKeys)) throw new Error('Italian locale keys must match English locale keys');
+const output = `window.CRYPTPASS_LOCALES = ${JSON.stringify({ en: english, it: italian })};\n`;
+fs.writeFileSync(path.join(root, 'www/js/locales.js'), output);

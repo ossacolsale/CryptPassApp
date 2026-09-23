@@ -12,6 +12,7 @@ class OtherView extends View implements ViewModel {
     protected readonly IdViewSequence: string = 'ViewSequence';
     protected readonly IdChangeDescr: string = 'IdChangeDescr';
     protected readonly IdInstructions: string = 'Instructions';
+    protected readonly IdWalletProfiles: string = 'WalletProfiles';
     protected readonly IdChPwdRemind: string = 'RememberChPwd';
     protected readonly IdSavePreferences: string = 'SavePreferences';
     protected readonly IdRetryLoad: string = 'RetryLoad';
@@ -44,13 +45,23 @@ class OtherView extends View implements ViewModel {
         ${ViewHelpers.button(this.IdPreferences,'Preferences',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdViewSequence,'View sequence',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangePwd,'Change password',this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdWalletProfiles,'Manage wallets',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdRestore,'Restore/reset wallet',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions,'Read instructions',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangeDescr,passDescr==''?'Add a description to your wallet':'Change description to your wallet',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdAbout,'About author',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu,'Go back',this.ClassFormBtnSec)}
+        <p class="mt-3"><label for="AppLanguage">Language</label>
+        <select id="AppLanguage" class="form-select"><option value="en">English</option><option value="it">Italiano</option></select></p>
         </div>
         `,() => this.clickEl(this.IdGoToMainMenu));
+        (this.getEl('AppLanguage') as HTMLSelectElement).value = Localization.current();
+    }
+
+    protected changeLanguage(): void {
+        const select = this.getEl('AppLanguage') as HTMLSelectElement;
+        Localization.setLanguage(select.value);
+        this.Init();
     }
 
     protected async onClick(e: Event) {
@@ -71,15 +82,16 @@ class OtherView extends View implements ViewModel {
             case this.IdPreferences:
                 this.ViewPreferences();
                 break;
+            case this.IdWalletProfiles:
+                ScenarioController.changeScenario(new WalletProfilesView());
+                break;
             case this.IdRestore:     
                 const seq = this._ca.getSequence().join(', ');              
                 ScenarioController.changeScenario(new RestoreView(), { 
                     back: () => ScenarioController.changeScenario(new OtherView()),
-                    desc: `<div class="alert alert-warning"><p>Here you can restore or create a new &quot;Sequence/KeyPassFile&quot; couple.</p>
-                    <p>In each case, while your current KeyPassFile won't be erased, the original sequence could be instead.
-                    So remember to store your current sequence (e.g. with a screenshot) 
-                    in a safe place place before creating or restoring a wallet.</p>
-                    <p>Current sequence: <span class="fw-bold">${seq}</span></p></div>`,
+                    desc: `<div class="alert alert-warning"><p>${Localization.text('ui.restoreIntro')}</p>
+                    <p>${Localization.text('ui.restoreWarning')}</p>
+                    <p>${Localization.text('ui.currentSequence')} <span class="fw-bold">${seq}</span></p></div>`,
                     status: 'OK' } as RestoreOptions);
                 break;
             case this.IdViewSequence:
@@ -134,7 +146,7 @@ class OtherView extends View implements ViewModel {
                 `, () => this.clickEl(this.IdGoToInit));
         } catch (e) {
             this.setApp(`<h2>Preferences</h2>
-                <p>Error: ${(e as Error).message}</p>
+                <p>${Localization.text('preferences.loadError')}</p>
                 <form id="${this.IdChPreferencesForm}">
                 <p>${ViewHelpers.submit(this.IdRetryLoad,'Retry to load preferences',this.ClassFormBtn)}
             ${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)}</p>
@@ -175,8 +187,8 @@ class OtherView extends View implements ViewModel {
     protected RefreshSequence () {
         this.setApp(`
         <h2>Refresh sequence</h2>
-        <div class="alert alert-danger">If you confirm, the current sequence will be replaced with another one, always randomic.
-        Remember to store the new sequence in a safe place (e.g. with a screenshot). <span class="fw-bold">Are you sure to proceed?</span></div>
+        <div class="alert alert-danger">${Localization.text('other.refreshWarning')}
+        ${Localization.text('other.storeSequence')} <span class="fw-bold">${Localization.text('other.areSure')}</span></div>
         <p>${ViewHelpers.button(this.IdConfirmSequenceRefresh,'Confirm sequence refresh',this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdViewSequence,'Go back',this.ClassFormBtnSec)}</p>
         `,() => this.clickEl(this.IdViewSequence));
@@ -204,6 +216,7 @@ class OtherView extends View implements ViewModel {
     }
 
     public Handlers: EventHandlerModel[] = [
+        {name: 'OtherViewChange', handler: () => this.changeLanguage(), type: 'change'},
         {name: 'OtherViewClick', handler: (e) => this.onClick(e), type: 'click'},
         {name: 'OtherViewSubmit', handler: (e) => { e.preventDefault(); this.onSubmit(e); }, type: 'submit'}
     ];   

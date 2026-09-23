@@ -50,10 +50,14 @@ class State {
 }
 
 
-document.addEventListener('deviceready',
-    () =>
-    ScenarioController.changeScenario(new WelcomeView())
-,false);
+document.addEventListener('deviceready', () => {
+    try {
+        Localization.initialize();
+        ScenarioController.changeScenario(new WelcomeView());
+    } catch (_) {
+        alert('Localization resources could not be loaded.');
+    }
+}, false);
 
 
 class AutoLock {

@@ -49,7 +49,15 @@ class State {
 }
 State.__K_ = '';
 State.__Password_ = '';
-document.addEventListener('deviceready', () => ScenarioController.changeScenario(new WelcomeView()), false);
+document.addEventListener('deviceready', () => {
+    try {
+        Localization.initialize();
+        ScenarioController.changeScenario(new WelcomeView());
+    }
+    catch (_) {
+        alert('Localization resources could not be loaded.');
+    }
+}, false);
 class AutoLock {
     static start() {
         var _b, _c;
@@ -168,7 +176,7 @@ class Config {
     }
     static setConfig(cfg) {
         return __awaiter(this, void 0, void 0, function* () {
-            return (yield SecureStorage.setVal(this.configName, JSON.stringify(cfg))) !== false;
+            return WalletProfiles.commitActiveConfig(JSON.stringify(cfg));
         });
     }
     static getConfig() {
@@ -433,6 +441,193 @@ const StandardRnW = {
     SequenceWriter: (seq) => Config.writeSequence(seq),
     KeyPassWriter: (kp) => Config.writeKeyPass(kp)
 };
+class WalletProfiles {
+    static createId() {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        return Array.from(bytes).map(value => ('0' + value.toString(16)).slice(-2)).join('');
+    }
+    static readStore() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const raw = yield SecureStorage.getVal(this.storeKey);
+            if (raw === false)
+                return false;
+            const value = JSON.parse(raw);
+            if (value.version !== 1 || !Array.isArray(value.profiles) ||
+                !value.profiles.every(profile => typeof profile.id === 'string' && typeof profile.name === 'string' && typeof profile.config === 'string') ||
+                !value.profiles.some(profile => profile.id === value.activeId))
+                throw new Error('Wallet profile data is invalid');
+            return value;
+        });
+    }
+    static writeStore(store) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const serialized = JSON.stringify(store);
+            if ((yield SecureStorage.setVal(this.storeKey, serialized)) === false)
+                return false;
+            return (yield SecureStorage.getVal(this.storeKey)) === serialized;
+        });
+    }
+    static initialize() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const existing = yield this.readStore();
+            if (existing !== false) {
+                const active = existing.profiles.find(profile => profile.id === existing.activeId);
+                const current = yield SecureStorage.getVal(this.activeConfigKey);
+                if (active && current !== active.config && (yield SecureStorage.setVal(this.activeConfigKey, active.config)) === false)
+                    throw new Error('Could not restore active wallet configuration');
+                return;
+            }
+            const legacyConfig = yield SecureStorage.getVal(this.activeConfigKey);
+            const profile = {
+                id: this.createId(),
+                name: 'My wallet',
+                config: legacyConfig === false ? this.emptyConfig : legacyConfig
+            };
+            const migrated = { version: 1, activeId: profile.id, profiles: [profile] };
+            if (!(yield this.writeStore(migrated)))
+                throw new Error('Could not verify wallet profile migration');
+            if (legacyConfig === false && (yield SecureStorage.setVal(this.activeConfigKey, profile.config)) === false) {
+                yield SecureStorage.delVal(this.storeKey);
+                throw new Error('Could not initialize wallet configuration');
+            }
+        });
+    }
+    static list() {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false)
+                return [];
+            return store.profiles.map(profile => ({ id: profile.id, name: profile.name, active: profile.id === store.activeId }));
+        });
+    }
+    static activeName() {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false)
+                return 'My wallet';
+            const active = store.profiles.find(profile => profile.id === store.activeId);
+            return active ? active.name : 'My wallet';
+        });
+    }
+    static commitActiveConfig(config) {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false)
+                return false;
+            const active = store.profiles.find(profile => profile.id === store.activeId);
+            if (!active)
+                return false;
+            active.config = config;
+            if (!(yield this.writeStore(store)))
+                return false;
+            const result = yield SecureStorage.setVal(this.activeConfigKey, config);
+            return result !== false && (yield SecureStorage.getVal(this.activeConfigKey)) === config;
+        });
+    }
+    static syncActiveConfig() {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false)
+                return false;
+            const active = store.profiles.find(profile => profile.id === store.activeId);
+            const config = yield SecureStorage.getVal(this.activeConfigKey);
+            if (!active || config === false)
+                return false;
+            active.config = config;
+            return this.writeStore(store);
+        });
+    }
+    static rename(id, name) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const normalized = name.trim();
+            if (!normalized || normalized.length > 80)
+                return false;
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false)
+                return false;
+            const profile = store.profiles.find(item => item.id === id);
+            if (!profile)
+                return false;
+            profile.name = normalized;
+            return this.writeStore(store);
+        });
+    }
+    static remove(id) {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false || store.activeId === id || store.profiles.length < 2)
+                return false;
+            store.profiles = store.profiles.filter(profile => profile.id !== id);
+            return this.writeStore(store);
+        });
+    }
+    static switchTo(id) {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false || store.activeId === id)
+                return store !== false;
+            const target = store.profiles.find(profile => profile.id === id);
+            const previous = store.profiles.find(profile => profile.id === store.activeId);
+            const currentConfig = yield SecureStorage.getVal(this.activeConfigKey);
+            if (!target || !previous || currentConfig === false)
+                return false;
+            previous.config = currentConfig;
+            const oldActiveId = store.activeId;
+            store.activeId = id;
+            if (!(yield this.writeStore(store)))
+                return false;
+            if ((yield SecureStorage.setVal(this.activeConfigKey, target.config)) !== false)
+                return true;
+            store.activeId = oldActiveId;
+            yield this.writeStore(store);
+            yield SecureStorage.setVal(this.activeConfigKey, currentConfig);
+            return false;
+        });
+    }
+    static add(name) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const normalized = name.trim();
+            if (!normalized || normalized.length > 80)
+                return false;
+            yield this.initialize();
+            const store = yield this.readStore();
+            if (store === false)
+                return false;
+            const currentConfig = yield SecureStorage.getVal(this.activeConfigKey);
+            const current = store.profiles.find(profile => profile.id === store.activeId);
+            if (currentConfig === false || !current)
+                return false;
+            current.config = currentConfig;
+            const profile = { id: this.createId(), name: normalized, config: this.emptyConfig };
+            store.profiles.push(profile);
+            store.activeId = profile.id;
+            if (!(yield this.writeStore(store)))
+                return false;
+            if ((yield SecureStorage.setVal(this.activeConfigKey, profile.config)) !== false)
+                return profile.id;
+            store.profiles = store.profiles.filter(item => item.id !== profile.id);
+            store.activeId = current.id;
+            yield this.writeStore(store);
+            yield SecureStorage.setVal(this.activeConfigKey, currentConfig);
+            return false;
+        });
+    }
+}
+WalletProfiles.storeKey = 'cryptPassWalletProfiles';
+WalletProfiles.activeConfigKey = 'cryptPassCfg';
+WalletProfiles.emptyConfig = JSON.stringify({
+    KeyFilePath: '',
+    Sequence: JSON.stringify({ Sequence: [] }),
+    Preferences: { ChPwdReminder: true }
+});
 const handledTypes = ['deviceready', 'click', 'change', 'submit', 'focus', 'blur', 'backbutton', 'touchstart', 'touchend'];
 class EventsController {
     static getEventHandler(name, event) {
@@ -540,13 +735,14 @@ class View {
     }
     setMarkup(elId, content) {
         $('#' + elId).html(content);
+        Localization.apply(this.getEl(elId));
     }
     getText(elId) {
         return $('#' + elId).text();
     }
     setText(elId, content) {
         const element = this.getEl(elId);
-        element.textContent = content;
+        element.textContent = Localization.translate(content);
     }
     getEl(elId) {
         return $('#' + elId)[0];
@@ -839,7 +1035,13 @@ class LocalStorage {
 LocalStorage.initialized = '1';
 LocalStorage.firsttime = '0';
 LocalStorage.passwordexpirationdays = 30;
-const secureStorage = new cordova.plugins.SecureStorage(function () { }, function () { }, 'cryptpass_store');
+let androidSecureStorage;
+function getAndroidSecureStorage() {
+    if (!androidSecureStorage) {
+        androidSecureStorage = new cordova.plugins.SecureStorage(function () { }, function () { }, 'cryptpass_store');
+    }
+    return androidSecureStorage;
+}
 class SecureStorage {
     static getVal(key) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -861,7 +1063,7 @@ class SecureStorage {
                     }
                     case 'android':
                         return new Promise((resolve, reject) => {
-                            secureStorage.get(function (value) {
+                            getAndroidSecureStorage().get(function (value) {
                                 resolve(value);
                             }, function (error) {
                                 if (error && error.message && error.message.indexOf('not found') !== -1) {
@@ -890,7 +1092,7 @@ class SecureStorage {
                         return (_b = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureSet(key, value))) !== null && _b !== void 0 ? _b : false;
                     case 'android':
                         return new Promise((resolve, reject) => {
-                            secureStorage.set(function (key) {
+                            getAndroidSecureStorage().set(function (key) {
                                 resolve(key);
                             }, function (error) {
                                 reject(error);
@@ -967,6 +1169,69 @@ class CommonHelpers {
 CommonHelpers.insensitiveSorter = (a, b) => { a = a.toLowerCase(); b = b.toLowerCase(); if (a < b)
     return -1; if (a > b)
     return 1; return 0; };
+class Localization {
+    static initialize() {
+        const locales = window.CRYPTPASS_LOCALES;
+        if (!locales || !locales.en || !locales.it) {
+            this.setLanguage('en', false);
+            return;
+        }
+        Object.keys(locales.en).forEach(key => { this.sourceKeys[locales.en[key].trim().replace(/\s+/g, ' ')] = key; });
+        const saved = window.localStorage.getItem(this.preferenceKey);
+        const preferred = saved === 'en' || saved === 'it' ? saved : (navigator.language.toLowerCase().indexOf('it') === 0 ? 'it' : 'en');
+        this.setLanguage(preferred, false);
+        const nativeAlert = window.alert.bind(window);
+        const nativeConfirm = window.confirm.bind(window);
+        const nativePrompt = window.prompt.bind(window);
+        window.alert = (message) => nativeAlert(this.translate(String(message == null ? '' : message)));
+        window.confirm = (message) => nativeConfirm(this.translate(String(message == null ? '' : message)));
+        window.prompt = (message, defaultValue) => nativePrompt(this.translate(String(message == null ? '' : message)), defaultValue === undefined ? undefined : this.translate(defaultValue));
+    }
+    static current() { return this.language; }
+    static setLanguage(language, persist = true) {
+        this.language = language === 'it' ? 'it' : 'en';
+        if (persist)
+            window.localStorage.setItem(this.preferenceKey, this.language);
+        document.documentElement.lang = this.language;
+    }
+    static text(key) {
+        var _a, _b, _c, _d;
+        return ((_b = (_a = window.CRYPTPASS_LOCALES) === null || _a === void 0 ? void 0 : _a[this.language]) === null || _b === void 0 ? void 0 : _b[key]) || ((_d = (_c = window.CRYPTPASS_LOCALES) === null || _c === void 0 ? void 0 : _c.en) === null || _d === void 0 ? void 0 : _d[key]) || key;
+    }
+    static translate(value) {
+        const normalized = value.trim().replace(/\s+/g, ' ');
+        const key = this.sourceKeys[normalized];
+        return key ? this.text(key) : value;
+    }
+    static apply(root) {
+        var _a;
+        if (this.language === 'en' || !window.CRYPTPASS_LOCALES)
+            return;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+            if (((_a = node.parentElement) === null || _a === void 0 ? void 0 : _a.closest('[translate="no"]')))
+                continue;
+            const value = node.nodeValue || '';
+            const trimmed = value.trim();
+            if (!trimmed)
+                continue;
+            const translated = this.translate(trimmed);
+            if (translated !== trimmed)
+                node.nodeValue = value.replace(trimmed, translated);
+        }
+        root.querySelectorAll('[placeholder], [title], [aria-label], input[type="button"], input[type="submit"]').forEach(element => {
+            ['placeholder', 'title', 'aria-label', ...(element.matches('input[type="button"], input[type="submit"]') ? ['value'] : [])].forEach(attribute => {
+                const current = element.getAttribute(attribute);
+                if (current)
+                    element.setAttribute(attribute, this.translate(current));
+            });
+        });
+    }
+}
+Localization.preferenceKey = 'cryptPassLanguage';
+Localization.language = 'en';
+Localization.sourceKeys = {};
 class TagHelpers {
     static getTagsFromString(tagString) {
         let tags = new Array();
@@ -1035,18 +1300,9 @@ class TagHelpers {
 }
 class ViewHelpers {
     static get Instructions() {
-        return `
-        <p><strong>CryptPass</strong> is a password wallet manager, with which you can store your passwords and more (usernames, PINs, custom fields)
-         with strong encryption.</p>
-        <p>CryptPass stores your passwords into a file that can be saved anywhere. This way, you can backup and synchronize this file with
-         any of your favorites cloud storage services (such as Dropbox and many others). This file is protected and encrypted with a combination of two methods:</p>
-         <ol>
-            <li>A <strong>master password</strong> of your choice (this should be really really strong)</li>
-            <li>A <strong>sequence of 26 numbers</strong>, from 0 to 25, that are randomly ordered by CryptPass</li>
-         </ol>
-        <p>The <strong>sequence in the correct order</strong> must be carefully kept in a safe place (e.g. a screenshot or transcribing it on a paper sheet and so on...)
-        because it will be stored only inside the app. This means that if you reset or lost your device, the sequence can be restored only retyping it manually.</p>
-        `;
+        return `<p>${this.escapeHtmlText(Localization.text('instructions.protection'))}</p>
+        <p>${this.escapeHtmlText(Localization.text('instructions.local'))}</p>
+        <p>${this.escapeHtmlText(Localization.text('instructions.legacy'))}</p>`;
     }
     static submit(id, val, _class) {
         return `<input type="submit"${this.getClass(_class)} id="${id}" value="${this.escapeHtmlAttribute(val)}" />`;
@@ -1359,6 +1615,7 @@ class OtherView extends View {
         this.IdViewSequence = 'ViewSequence';
         this.IdChangeDescr = 'IdChangeDescr';
         this.IdInstructions = 'Instructions';
+        this.IdWalletProfiles = 'WalletProfiles';
         this.IdChPwdRemind = 'RememberChPwd';
         this.IdSavePreferences = 'SavePreferences';
         this.IdRetryLoad = 'RetryLoad';
@@ -1372,6 +1629,7 @@ class OtherView extends View {
         this.IdHandleChPwd = 'HandleChPwd';
         this.RemindValue = 'Remind';
         this.Handlers = [
+            { name: 'OtherViewChange', handler: () => this.changeLanguage(), type: 'change' },
             { name: 'OtherViewClick', handler: (e) => this.onClick(e), type: 'click' },
             { name: 'OtherViewSubmit', handler: (e) => { e.preventDefault(); this.onSubmit(e); }, type: 'submit' }
         ];
@@ -1386,14 +1644,23 @@ class OtherView extends View {
         ${ViewHelpers.button(this.IdPreferences, 'Preferences', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdViewSequence, 'View sequence', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangePwd, 'Change password', this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdWalletProfiles, 'Manage wallets', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdRestore, 'Restore/reset wallet', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions, 'Read instructions', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangeDescr, passDescr == '' ? 'Add a description to your wallet' : 'Change description to your wallet', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdAbout, 'About author', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu, 'Go back', this.ClassFormBtnSec)}
+        <p class="mt-3"><label for="AppLanguage">Language</label>
+        <select id="AppLanguage" class="form-select"><option value="en">English</option><option value="it">Italiano</option></select></p>
         </div>
         `, () => this.clickEl(this.IdGoToMainMenu));
+            this.getEl('AppLanguage').value = Localization.current();
         });
+    }
+    changeLanguage() {
+        const select = this.getEl('AppLanguage');
+        Localization.setLanguage(select.value);
+        this.Init();
     }
     onClick(e) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -1414,15 +1681,16 @@ class OtherView extends View {
                 case this.IdPreferences:
                     this.ViewPreferences();
                     break;
+                case this.IdWalletProfiles:
+                    ScenarioController.changeScenario(new WalletProfilesView());
+                    break;
                 case this.IdRestore:
                     const seq = this._ca.getSequence().join(', ');
                     ScenarioController.changeScenario(new RestoreView(), {
                         back: () => ScenarioController.changeScenario(new OtherView()),
-                        desc: `<div class="alert alert-warning"><p>Here you can restore or create a new &quot;Sequence/KeyPassFile&quot; couple.</p>
-                    <p>In each case, while your current KeyPassFile won't be erased, the original sequence could be instead.
-                    So remember to store your current sequence (e.g. with a screenshot) 
-                    in a safe place place before creating or restoring a wallet.</p>
-                    <p>Current sequence: <span class="fw-bold">${seq}</span></p></div>`,
+                        desc: `<div class="alert alert-warning"><p>${Localization.text('ui.restoreIntro')}</p>
+                    <p>${Localization.text('ui.restoreWarning')}</p>
+                    <p>${Localization.text('ui.currentSequence')} <span class="fw-bold">${seq}</span></p></div>`,
                         status: 'OK'
                     });
                     break;
@@ -1478,7 +1746,7 @@ class OtherView extends View {
             }
             catch (e) {
                 this.setApp(`<h2>Preferences</h2>
-                <p>Error: ${e.message}</p>
+                <p>${Localization.text('preferences.loadError')}</p>
                 <form id="${this.IdChPreferencesForm}">
                 <p>${ViewHelpers.submit(this.IdRetryLoad, 'Retry to load preferences', this.ClassFormBtn)}
             ${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
@@ -1521,8 +1789,8 @@ class OtherView extends View {
     RefreshSequence() {
         this.setApp(`
         <h2>Refresh sequence</h2>
-        <div class="alert alert-danger">If you confirm, the current sequence will be replaced with another one, always randomic.
-        Remember to store the new sequence in a safe place (e.g. with a screenshot). <span class="fw-bold">Are you sure to proceed?</span></div>
+        <div class="alert alert-danger">${Localization.text('other.refreshWarning')}
+        ${Localization.text('other.storeSequence')} <span class="fw-bold">${Localization.text('other.areSure')}</span></div>
         <p>${ViewHelpers.button(this.IdConfirmSequenceRefresh, 'Confirm sequence refresh', this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdViewSequence, 'Go back', this.ClassFormBtnSec)}</p>
         `, () => this.clickEl(this.IdViewSequence));
@@ -1611,7 +1879,7 @@ class PassView extends View {
             const passDescr = State.CryptPass.getPassDescription().trim();
             this.OtherCounter = 0;
             const names = State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter);
-            let out = `${passDescr === '' ? '' : '<p>Wallet &quot;<em>' + ViewHelpers.escapeHtmlText(passDescr) + '</em>&quot;</p>'}
+            let out = `${passDescr === '' ? '' : '<p>Wallet &quot;<em translate="no">' + ViewHelpers.escapeHtmlText(passDescr) + '</em>&quot;</p>'}
         <p>${ViewHelpers.button(this.IdLogout, 'Logout', this.ClassFormBtnSec)}
         ${ViewHelpers.button(this.IdNewEntry, 'Add a new entry', this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdOtherOptions, 'Other options', this.ClassFormBtn)}</p>`;
@@ -1685,8 +1953,8 @@ class PassView extends View {
     }
     PrintViewOrCopyBar(refId, label) {
         return `<span id="${this.vocBarPre + refId}" class="d-none">
-        ${ViewHelpers.button('view_' + refId, 'View ' + label, this.ClassFormBtnSec, { 'data-view': refId })}
-        ${ViewHelpers.button('copy_' + refId, 'Copy ' + label, this.ClassFormBtnSec, { 'data-copy': refId })}
+        ${ViewHelpers.button('view_' + refId, Localization.text('entry.view') + ' ' + label, this.ClassFormBtnSec, { 'data-view': refId })}
+        ${ViewHelpers.button('copy_' + refId, Localization.text('entry.copy') + ' ' + label, this.ClassFormBtnSec, { 'data-copy': refId })}
         ${ViewHelpers.button('cancel_' + refId, ' X ', this.ClassFormBtnSec, { 'data-cancel': refId })}
         </span>`;
     }
@@ -1844,7 +2112,7 @@ class PassView extends View {
     PrintEntriesName(entriesName) {
         let out = '';
         let counter = 0;
-        entriesName.forEach((val) => out += `<li class="my-3">${ViewHelpers.button('Entry' + (counter++), val, this.ClassFormBtnBla, { 'data-name': val })}</li>`);
+        entriesName.forEach((val) => out += `<li class="my-3">${ViewHelpers.button('Entry' + (counter++), val, this.ClassFormBtnBla, { 'data-name': val, translate: 'no' })}</li>`);
         return out;
     }
     onFocus(e) {
@@ -1972,7 +2240,7 @@ class PassView extends View {
                 const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.Password);
                 this.LoaderHide();
                 if (setresult) {
-                    alert('Entry "' + Name + '" successfully removed');
+                    alert(Localization.text('entry.deleted').replace('{name}', Name));
                     this.Init();
                 }
                 else {
@@ -1995,7 +2263,7 @@ class PassView extends View {
                         checkName = 'Changed';
                     }
                     else {
-                        alert('An entry named "' + Name + '" already exists. Please choose another name.');
+                        alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
                         this.focusEl(this.IdName);
                     }
                 }
@@ -2050,7 +2318,7 @@ class PassView extends View {
                     }
                 }
                 else {
-                    alert('An entry named "' + Name + '" already exists. Please choose another name.');
+                    alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
                     this.focusEl(this.IdName);
                 }
             }
@@ -2081,14 +2349,14 @@ class PassView extends View {
         if (!readonly)
             out += this.attrInput(this.IdName, 'Name * (mandatory)', 'Put here the entry name', entry.Name === undefined ? '' : entry.Name);
         if (!readonly || entry.Tags !== undefined)
-            out += this.attrInput(this.IdTags, 'Tags', 'Tags comma separated (eg. &quot;work, Windows&quot;))', entry.Tags === undefined ? '' : entry.Tags, readonly, true);
+            out += this.attrInput(this.IdTags, 'Tags', 'Tags comma separated (eg. &quot;work, Windows&quot;)', entry.Tags === undefined ? '' : entry.Tags, readonly, true);
         if (!readonly) {
             const tags = TagHelpers.getAllTags(State.EntriesManage);
             if (tags.length > 0) {
                 let tagsButtons = new Array();
                 let tagCounter = 0;
                 tags.forEach((tag) => {
-                    tagsButtons.push(ViewHelpers.button('tag' + (++tagCounter), tag, this.ClassFormBtn + ' my-1', { 'data-tag': tag }));
+                    tagsButtons.push(ViewHelpers.button('tag' + (++tagCounter), tag, this.ClassFormBtn + ' my-1', { 'data-tag': tag, translate: 'no' }));
                 });
                 out += `<div><span id="${this.IdSpanSelExistingTags}">${ViewHelpers.button(this.IdSelExistingTags, 'Select existing tags', 'my-1 d-none ' + this.ClassFormBtnSec)}</span>
                 <span id="${this.IdExistingTags}" class="d-none">${tagsButtons.join(' ')}
@@ -2126,7 +2394,7 @@ class PassView extends View {
         <div class="row mb-4" id="${this.IdOtherP + counter}">
             <div class="col-9">
                 <p class="row my-1">${readonly ? this.PrintViewOrCopyBar(this.IdOtherValue + counter, entryKey) : ''}
-                ${readonly ? `<strong>${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey + counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
+                ${readonly ? `<strong translate="no">${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey + counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
                 </p>
                 <p class="row my-1">${ViewHelpers.hiddeninput(this.IdOtherValue + counter + this.valExt, entryVal)}
                 ${ViewHelpers.textinput(this.IdOtherValue + counter, this.hideVal, readonly ? '' : 'Put here a custom value', this.ClassFormCtrl + ' ', readonly, true)}
@@ -2182,8 +2450,8 @@ class RestoreView extends View {
         this.IdConfirm = 'Confirm';
         this.IdStartUsingCryptpass = 'StartUsingCryptpass';
         this.PrefixSequenceButton = 'sequence_';
-        this.DefaultNoFile = 'No file selected';
-        this.DefaultNoSequence = 'No sequence selected';
+        this.DefaultNoFile = Localization.text('ui.noFileSelected');
+        this.DefaultNoSequence = Localization.text('ui.noSequenceSelected');
         this._sequence = [];
         this.Handlers = [
             { name: 'RestoreViewClick', handler: (e) => this.onClick(e), type: 'click' }
@@ -2377,9 +2645,7 @@ class RestoreView extends View {
 
     <p class="h3">${this._ca.getSequence().join(', ')}</p>
 
-     <p class="alert alert-danger">Now, please make a note or a screenshot of this number sequence (in correct order).
-     Remember anyway that this sequence of numbers can also be displayed at a later time through the appropriate menu item 
-     (<strong>best before you reset or lost your device...</strong>)</p>
+     <p class="alert alert-danger">${Localization.text('ui.recordSequence')} (<strong>${Localization.text('ui.beforeReset')}</strong>)</p>
      <p>${ViewHelpers.button(this.IdStartUsingCryptpass, 'Start using CryptPassApp', this.ClassFormBtn)}</p>
 
     `);
@@ -2477,6 +2743,148 @@ class RestoreView extends View {
             out += ` ${ViewHelpers.button(this.PrefixSequenceButton + i, ` ${i} `, this.ClassFormBtnBla + ' m-2')} `;
         }
         return out;
+    }
+}
+class WalletProfilesView extends View {
+    Init() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const profiles = yield WalletProfiles.list();
+            const rows = profiles.map(profile => `<div class="border rounded p-2 my-2">
+            <strong translate="no">${ViewHelpers.escapeHtmlText(profile.name === 'My wallet' ? Localization.text('wallet.defaultName') : profile.name)}</strong>${profile.active ? ` (${Localization.text('wallet.active')})` : ''}<br>
+            ${profile.active ? '' : ViewHelpers.button('wallet_switch_' + profile.id, 'Open', this.ClassFormBtn, { 'data-wallet': profile.id })}
+            ${ViewHelpers.button('wallet_rename_' + profile.id, 'Rename', this.ClassFormBtnSec, { 'data-wallet': profile.id })}
+            ${profile.active || profiles.length < 2 ? '' : ViewHelpers.button('wallet_remove_' + profile.id, 'Remove from app', this.ClassFormBtnSec, { 'data-wallet': profile.id })}
+        </div>`).join('');
+            this.setApp(`<h2>Wallets</h2>
+            <p>Each wallet keeps its own file and recovery sequence. Removing a wallet only removes its local profile; it does not delete the vault file.</p>
+            ${rows}
+            <form id="${this.IdWalletManager}">
+                <label for="${this.IdWalletName}">New wallet name</label>
+                <input class="form-control" id="${this.IdWalletName}" maxlength="80" required>
+                <label for="${this.IdNewPassword}">${Localization.text('wallet.password')}</label>
+                ${ViewHelpers.password(this.IdNewPassword, 'Type password', this.ClassFormCtrl)}
+                <label for="${this.IdRepeatPassword}">${Localization.text('wallet.passwordRepeat')}</label>
+                ${ViewHelpers.password(this.IdRepeatPassword, 'Repeat password', this.ClassFormCtrl)}
+                <p class="mt-2">${ViewHelpers.submit(this.IdAddWallet, 'Create wallet', this.ClassFormBtn)}
+                ${ViewHelpers.submit(this.IdAddExisting, Localization.text('wallet.addExisting'), this.ClassFormBtnSec)}
+                ${ViewHelpers.button('WalletBack', 'Go back', this.ClassFormBtnSec)}</p>
+            </form>`, () => this.clickEl('WalletBack'));
+        });
+    }
+    onClick(event) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const target = event.target;
+            const id = target.id;
+            if (id === 'WalletBack') {
+                ScenarioController.changeScenario(new OtherView());
+                return;
+            }
+            const walletId = target.getAttribute('data-wallet');
+            if (!walletId)
+                return;
+            if (id.indexOf('wallet_switch_') === 0) {
+                State.logout();
+                if (yield WalletProfiles.switchTo(walletId)) {
+                    ScenarioController.changeScenario(new MainView());
+                }
+                else
+                    alert(Localization.text('wallet.openError'));
+            }
+            else if (id.indexOf('wallet_rename_') === 0) {
+                const profiles = yield WalletProfiles.list();
+                const profile = profiles.find(item => item.id === walletId);
+                const name = profile && window.prompt(Localization.text('wallet.renamePrompt'), profile.name);
+                if (name && (yield WalletProfiles.rename(walletId, name)))
+                    this.Init();
+            }
+            else if (id.indexOf('wallet_remove_') === 0) {
+                if (window.confirm(Localization.text('wallet.removeConfirm'))) {
+                    if (yield WalletProfiles.remove(walletId))
+                        this.Init();
+                    else
+                        alert(Localization.text('wallet.removeError'));
+                }
+            }
+        });
+    }
+    onSubmit(event) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            if (event.target.id !== this.IdWalletManager)
+                return;
+            event.preventDefault();
+            const name = this.getEl(this.IdWalletName).value.trim();
+            const submitterId = (_a = event.submitter) === null || _a === void 0 ? void 0 : _a.id;
+            const isExistingVault = submitterId === this.IdAddExisting;
+            const password = this.getEl(this.IdNewPassword).value;
+            const repeatedPassword = this.getEl(this.IdRepeatPassword).value;
+            if (!isExistingVault && !CommonHelpers.CheckNewPassword(password, repeatedPassword))
+                return;
+            if (!name || name.length > 80) {
+                alert(Localization.text('wallet.createError'));
+                return;
+            }
+            const previous = (yield WalletProfiles.list()).find(profile => profile.active);
+            State.logout();
+            const id = yield WalletProfiles.add(name);
+            if (id === false) {
+                alert(Localization.text('wallet.createError'));
+                return;
+            }
+            if (isExistingVault) {
+                const rollback = () => __awaiter(this, void 0, void 0, function* () {
+                    if (previous)
+                        yield WalletProfiles.switchTo(previous.id);
+                    yield WalletProfiles.remove(id);
+                    State.logout();
+                    ScenarioController.changeScenario(new MainView());
+                });
+                ScenarioController.changeScenario(new RestoreView(), { status: 'KO', back: rollback, desc: `<p>${Localization.text('wallet.existingInstructions')}</p>` });
+                return;
+            }
+            const created = yield new ConfigActions(password).setup('NEW');
+            if (!created && previous) {
+                yield WalletProfiles.switchTo(previous.id);
+                yield WalletProfiles.remove(id);
+            }
+            if (created)
+                ScenarioController.changeScenario(new WalletCreatedView());
+            else
+                ScenarioController.changeScenario(new MainView());
+        });
+    }
+    constructor() {
+        super();
+        this.IdWalletManager = 'WalletManager';
+        this.IdWalletName = 'WalletName';
+        this.IdAddWallet = 'AddWallet';
+        this.IdAddExisting = 'AddExistingWallet';
+        this.IdNewPassword = 'NewWalletPassword';
+        this.IdRepeatPassword = 'RepeatWalletPassword';
+        this.Handlers = [
+            { name: 'WalletProfilesClick', handler: event => { void this.onClick(event); }, type: 'click' }
+        ];
+        this.Handlers.push({ name: 'WalletProfilesSubmit', handler: event => { void this.onSubmit(event); }, type: 'submit' });
+    }
+}
+class WalletCreatedView extends View {
+    constructor() {
+        super(...arguments);
+        this.Handlers = [
+            { name: 'WalletCreatedClick', handler: event => { if (event.target.id === 'ContinueToWallet')
+                    ScenarioController.changeScenario(new MainView()); }, type: 'click' }
+        ];
+    }
+    Init() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = yield Config.readData();
+            const sequence = data.se.Sequence.join(', ');
+            this.setApp(`<h2>${Localization.text('wallet.created')}</h2>
+            <p class="alert alert-danger">${Localization.text('wallet.sequenceWarning')}</p>
+            <p class="h3" id="CreatedWalletSequence"></p>
+            <p>${ViewHelpers.button('ContinueToWallet', Localization.text('wallet.continue'), this.ClassFormBtn)}</p>`, () => ScenarioController.changeScenario(new MainView()));
+            this.setText('CreatedWalletSequence', sequence);
+        });
     }
 }
 class WelcomeView extends View {

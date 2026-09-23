@@ -60,7 +60,7 @@ class PassView extends View implements ViewModel {
         const passDescr = State.CryptPass.getPassDescription().trim();
         this.OtherCounter = 0;
         const names = State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter);
-        let out: string = `${passDescr === '' ? '' : '<p>Wallet &quot;<em>'+ViewHelpers.escapeHtmlText(passDescr)+'</em>&quot;</p>'}
+        let out: string = `${passDescr === '' ? '' : '<p>Wallet &quot;<em translate="no">'+ViewHelpers.escapeHtmlText(passDescr)+'</em>&quot;</p>'}
         <p>${ViewHelpers.button(this.IdLogout,'Logout',this.ClassFormBtnSec)}
         ${ViewHelpers.button(this.IdNewEntry,'Add a new entry',this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdOtherOptions,'Other options',this.ClassFormBtn)}</p>`;
@@ -136,8 +136,8 @@ class PassView extends View implements ViewModel {
 
     protected PrintViewOrCopyBar(refId: string, label: string): string {
         return `<span id="${this.vocBarPre+refId}" class="d-none">
-        ${ViewHelpers.button('view_'+refId,'View '+label,this.ClassFormBtnSec,{ 'data-view': refId })}
-        ${ViewHelpers.button('copy_'+refId,'Copy '+label,this.ClassFormBtnSec,{ 'data-copy': refId })}
+        ${ViewHelpers.button('view_'+refId,Localization.text('entry.view')+' '+label,this.ClassFormBtnSec,{ 'data-view': refId })}
+        ${ViewHelpers.button('copy_'+refId,Localization.text('entry.copy')+' '+label,this.ClassFormBtnSec,{ 'data-copy': refId })}
         ${ViewHelpers.button('cancel_'+refId,' X ',this.ClassFormBtnSec,{ 'data-cancel': refId })}
         </span>`;
     }
@@ -308,7 +308,7 @@ class PassView extends View implements ViewModel {
         let out = '';
         let counter = 0;
         entriesName.forEach(
-            (val) => out += `<li class="my-3">${ViewHelpers.button('Entry'+(counter++),val,this.ClassFormBtnBla,{ 'data-name': val })}</li>`
+            (val) => out += `<li class="my-3">${ViewHelpers.button('Entry'+(counter++),val,this.ClassFormBtnBla,{ 'data-name': val, translate: 'no' })}</li>`
         );
         return out;
     }
@@ -445,7 +445,7 @@ class PassView extends View implements ViewModel {
             const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.Password);
             this.LoaderHide();
             if (setresult) {
-                alert('Entry "' + Name + '" successfully removed');
+                alert(Localization.text('entry.deleted').replace('{name}', Name));
                 this.Init();
             } else {
                 alert('Sorry, generic error during entry removing. Please retry.');
@@ -464,7 +464,7 @@ class PassView extends View implements ViewModel {
                 if (State.EntriesManage.GetEntry(Name) === false) {
                     checkName = 'Changed';
                 } else {
-                    alert('An entry named "'+Name+'" already exists. Please choose another name.');
+                    alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
                     this.focusEl(this.IdName);
                 }
             } else checkName = 'OK';
@@ -511,7 +511,7 @@ class PassView extends View implements ViewModel {
                 }
                 
             } else {
-                alert('An entry named "'+Name+'" already exists. Please choose another name.');
+                alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
                 this.focusEl(this.IdName);
             }
         } else {
@@ -538,7 +538,7 @@ class PassView extends View implements ViewModel {
         else out += ViewHelpers.hiddeninput(this.IdNameOld, entry.Name);
         if (readonly && entry.Date !== undefined) out += `<p class="fst-italic">Last edit: <strong>${ViewHelpers.escapeHtmlText(String(entry.Date))}</strong></p>`;
         if (!readonly) out += this.attrInput(this.IdName,'Name * (mandatory)','Put here the entry name',entry.Name === undefined ? '' : entry.Name);
-        if (!readonly || entry.Tags !== undefined) out += this.attrInput(this.IdTags,'Tags','Tags comma separated (eg. &quot;work, Windows&quot;))',entry.Tags === undefined ? '' : entry.Tags, readonly, true);
+        if (!readonly || entry.Tags !== undefined) out += this.attrInput(this.IdTags,'Tags','Tags comma separated (eg. &quot;work, Windows&quot;)',entry.Tags === undefined ? '' : entry.Tags, readonly, true);
         if (!readonly) {
             const tags = TagHelpers.getAllTags(State.EntriesManage);
             if (tags.length > 0) {
@@ -546,7 +546,7 @@ class PassView extends View implements ViewModel {
                 let tagCounter = 0;
                 tags.forEach(
                     (tag) => {
-                        tagsButtons.push(ViewHelpers.button('tag'+(++tagCounter),tag,this.ClassFormBtn+' my-1',{ 'data-tag': tag }));
+                        tagsButtons.push(ViewHelpers.button('tag'+(++tagCounter),tag,this.ClassFormBtn+' my-1',{ 'data-tag': tag, translate: 'no' }));
                     }
                 )
                 out += `<div><span id="${this.IdSpanSelExistingTags}">${ViewHelpers.button(this.IdSelExistingTags,'Select existing tags','my-1 d-none '+this.ClassFormBtnSec)}</span>
@@ -580,7 +580,7 @@ class PassView extends View implements ViewModel {
         <div class="row mb-4" id="${this.IdOtherP+counter}">
             <div class="col-9">
                 <p class="row my-1">${readonly ? this.PrintViewOrCopyBar(this.IdOtherValue+counter,entryKey) : ''}
-                ${readonly ? `<strong>${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey+counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
+                ${readonly ? `<strong translate="no">${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey+counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
                 </p>
                 <p class="row my-1">${ViewHelpers.hiddeninput(this.IdOtherValue+counter+this.valExt,entryVal)}
                 ${ViewHelpers.textinput(this.IdOtherValue+counter, this.hideVal, readonly ? '' : 'Put here a custom value', this.ClassFormCtrl + ' ', readonly, true)}

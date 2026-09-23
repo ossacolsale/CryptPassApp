@@ -14,18 +14,9 @@ interface InputAttrs {
 class ViewHelpers {
 
     public static get Instructions (): string {
-        return `
-        <p><strong>CryptPass</strong> is a password wallet manager, with which you can store your passwords and more (usernames, PINs, custom fields)
-         with strong encryption.</p>
-        <p>CryptPass stores your passwords into a file that can be saved anywhere. This way, you can backup and synchronize this file with
-         any of your favorites cloud storage services (such as Dropbox and many others). This file is protected and encrypted with a combination of two methods:</p>
-         <ol>
-            <li>A <strong>master password</strong> of your choice (this should be really really strong)</li>
-            <li>A <strong>sequence of 26 numbers</strong>, from 0 to 25, that are randomly ordered by CryptPass</li>
-         </ol>
-        <p>The <strong>sequence in the correct order</strong> must be carefully kept in a safe place (e.g. a screenshot or transcribing it on a paper sheet and so on...)
-        because it will be stored only inside the app. This means that if you reset or lost your device, the sequence can be restored only retyping it manually.</p>
-        `;
+        return `<p>${this.escapeHtmlText(Localization.text('instructions.protection'))}</p>
+        <p>${this.escapeHtmlText(Localization.text('instructions.local'))}</p>
+        <p>${this.escapeHtmlText(Localization.text('instructions.legacy'))}</p>`;
     }
 
     public static submit (id: string, val: string, _class?: string): string {

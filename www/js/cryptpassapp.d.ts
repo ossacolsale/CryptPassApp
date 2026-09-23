@@ -88,6 +88,37 @@ declare class ConfigActions {
     protected InitCryptPassConfig(): Promise<void>;
 }
 declare const StandardRnW: StdWriters;
+interface WalletProfile {
+    id: string;
+    name: string;
+    config: string;
+}
+interface WalletProfileStore {
+    version: 1;
+    activeId: string;
+    profiles: WalletProfile[];
+}
+declare class WalletProfiles {
+    private static readonly storeKey;
+    private static readonly activeConfigKey;
+    private static readonly emptyConfig;
+    private static createId;
+    private static readStore;
+    private static writeStore;
+    static initialize(): Promise<void>;
+    static list(): Promise<Array<{
+        id: string;
+        name: string;
+        active: boolean;
+    }>>;
+    static activeName(): Promise<string>;
+    static commitActiveConfig(config: string): Promise<boolean>;
+    static syncActiveConfig(): Promise<boolean>;
+    static rename(id: string, name: string): Promise<boolean>;
+    static remove(id: string): Promise<boolean>;
+    static switchTo(id: string): Promise<boolean>;
+    static add(name: string): Promise<string | false>;
+}
 declare const handledTypes: readonly ["deviceready", "click", "change", "submit", "focus", "blur", "backbutton", "touchstart", "touchend"];
 type HandledTypes = typeof handledTypes[number];
 type EventHandlersCollection = {
@@ -195,7 +226,8 @@ declare class LocalStorage {
     static PasswordExpirationTime(): number;
     static PasswordExpirationTimeSet(): void;
 }
-declare const secureStorage: SecureStorageInstance;
+declare let androidSecureStorage: SecureStorageInstance | undefined;
+declare function getAndroidSecureStorage(): SecureStorageInstance;
 declare class SecureStorage {
     static getVal(key: string): Promise<string | false>;
     static setVal(key: string, value: string): Promise<string | false>;
@@ -207,6 +239,27 @@ declare class CommonHelpers {
     static CheckNewPassword(pwd1: string, pwd2: string): boolean;
     static CheckChPassword(oldpwd: string, pwd1: string, pwd2: string): true | 'wrongOld' | 'wrongNew';
     static insensitiveSorter: (a: string, b: string) => number;
+}
+interface CryptPassLocaleMap {
+    [key: string]: string;
+}
+interface CryptPassLocales {
+    en: CryptPassLocaleMap;
+    it: CryptPassLocaleMap;
+}
+interface Window {
+    CRYPTPASS_LOCALES?: CryptPassLocales;
+}
+declare class Localization {
+    private static readonly preferenceKey;
+    private static language;
+    private static readonly sourceKeys;
+    static initialize(): void;
+    static current(): 'en' | 'it';
+    static setLanguage(language: string, persist?: boolean): void;
+    static text(key: string): string;
+    static translate(value: string): string;
+    static apply(root: HTMLElement): void;
 }
 declare class TagHelpers {
     static getTagsFromString(tagString: string): string[];
@@ -300,6 +353,7 @@ declare class OtherView extends View implements ViewModel {
     protected readonly IdViewSequence: string;
     protected readonly IdChangeDescr: string;
     protected readonly IdInstructions: string;
+    protected readonly IdWalletProfiles: string;
     protected readonly IdChPwdRemind: string;
     protected readonly IdSavePreferences: string;
     protected readonly IdRetryLoad: string;
@@ -315,6 +369,7 @@ declare class OtherView extends View implements ViewModel {
     protected _ca: ConfigActions;
     protected preferences: preferences;
     Init(): Promise<void>;
+    protected changeLanguage(): void;
     protected onClick(e: Event): Promise<void>;
     private showAbout;
     protected onSubmit(e: Event): Promise<void>;
@@ -464,6 +519,25 @@ declare class RestoreView extends View implements ViewModel {
     protected printSequenceButtons(): string;
     protected _sequence: number[];
     Handlers: EventHandlerModel[];
+}
+declare class WalletProfilesView extends View implements ViewModel {
+    onBackButton: TBackButton;
+    protected readonly IdWalletManager = "WalletManager";
+    protected readonly IdWalletName = "WalletName";
+    protected readonly IdAddWallet = "AddWallet";
+    protected readonly IdAddExisting = "AddExistingWallet";
+    protected readonly IdNewPassword = "NewWalletPassword";
+    protected readonly IdRepeatPassword = "RepeatWalletPassword";
+    Handlers: EventHandlerModel[];
+    Init(): Promise<void>;
+    protected onClick(event: Event): Promise<void>;
+    protected onSubmit(event: Event): Promise<void>;
+    constructor();
+}
+declare class WalletCreatedView extends View implements ViewModel {
+    onBackButton: TBackButton;
+    Handlers: EventHandlerModel[];
+    Init(): Promise<void>;
 }
 declare class WelcomeView extends View implements ViewModel {
     onBackButton: TBackButton;
