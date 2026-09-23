@@ -1,20 +1,27 @@
 {
-    "compilerOptions": {
-        "module": "amd",
-        "noImplicitAny": true,
-        "removeComments": true,
-        "preserveConstEnums": true,
-        "sourceMap": true,
-        "target": "ES6",
-        "rootDir": "./src/",
-        "outFile": "./www/js/cryptpassapp.js",
-        "allowSyntheticDefaultImports": true,
-        "esModuleInterop": true,
-        "declaration": true,
-        "strict": true,
-        "lib": [
-          "es6", "DOM"
-        ]
-      },
-      "include": ["src/**/*","typings/**/*"]
+  "compilerOptions": {
+    "module": "amd",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "target": "ES6",
+    "rootDir": "./src/",
+    "outFile": "./www/js/cryptpassapp.js",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "declaration": true,
+    "strict": true,
+    "lib": [
+      "es6",
+      "DOM"
+    ],
+    "types": [
+      "jquery"
+    ]
+  },
+  "include": [
+    "src/**/*",
+    "typings/**/*"
+  ]
 }

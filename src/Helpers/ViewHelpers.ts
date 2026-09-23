@@ -8,7 +8,7 @@ interface InputAttrs {
     placeholder?: string,
     noautocaps?: boolean,
     inputmode?: 'numeric' | 'text' | 'tel' | 'email' | 'decimal',
-    custom?: string
+    custom?: Record<string, string | number | boolean>
 }
 
 class ViewHelpers {
@@ -29,31 +29,31 @@ class ViewHelpers {
     }
 
     public static submit (id: string, val: string, _class?: string): string {
-        return `<input type="submit"${this.getClass(_class)} id="${id}" value="${this.cleanVal(val)}" />`;
+        return `<input type="submit"${this.getClass(_class)} id="${id}" value="${this.escapeHtmlAttribute(val)}" />`;
     }
 
-    public static button (id: string, val: string, _class?: string, custom?: string): string {
-        return `<button${this.getClass(_class)} type="button" id="${id}"${custom !== undefined ? ' '+custom:''}>${val}</button>`;
+    public static button (id: string, val: string, _class?: string, custom?: Record<string, string | number | boolean>): string {
+        return `<button${this.getClass(_class)} type="button" id="${this.escapeHtmlAttribute(id)}"${this.getCustom(custom)}>${this.escapeHtmlText(val)}</button>`;
     }
 
     public static label (forId: string, val: string, _class?: string): string {
-        return `<label${this.getClass(_class)} for="${forId}">${val}</label>`;
+        return `<label${this.getClass(_class)} for="${this.escapeHtmlAttribute(forId)}">${this.escapeHtmlText(val)}</label>`;
     }
 
     protected static genericInput (attrs: InputAttrs) {
-        return `<input${this.getClass(attrs._class)}${this.getChecked(attrs.checked)}${this.getInputmode(attrs.inputmode)}${this.getReadonly(attrs.readonly)}${this.getPlaceholder(attrs.placeholder)}${this.getNoautocaps(attrs.noautocaps)}${this.getValue(attrs.val)}${this.getCustom(attrs.custom)} type="${attrs.type}" id="${attrs.id}" />`;
+        return `<input${this.getClass(attrs._class)}${this.getChecked(attrs.checked)}${this.getInputmode(attrs.inputmode)}${this.getReadonly(attrs.readonly)}${this.getPlaceholder(attrs.placeholder)}${this.getNoautocaps(attrs.noautocaps)}${this.getValue(attrs.val)}${this.getCustom(attrs.custom)} type="${this.escapeHtmlAttribute(attrs.type)}" id="${this.escapeHtmlAttribute(attrs.id)}" />`;
     }
 
-    public static checkbox (id: string, val?: string, checked: boolean = false, _class?: string, custom?: string): string {
-        return this.genericInput({ id: id, val: this.cleanVal(val), checked: checked, _class: _class, type: 'checkbox', custom: custom });
+    public static checkbox (id: string, val?: string, checked: boolean = false, _class?: string, custom?: Record<string, string | number | boolean>): string {
+        return this.genericInput({ id: id, val: val, checked: checked, _class: _class, type: 'checkbox', custom: custom });
     }
 
     public static textinput (id: string, val?: string, placeholder?: string, _class?: string, readonly?: boolean, noautocaps?: boolean): string {
-        return this.genericInput({ id: id, val: this.cleanVal(val), placeholder: placeholder, readonly: readonly, _class: _class, type: 'text', noautocaps: noautocaps });
+        return this.genericInput({ id: id, val: val, placeholder: placeholder, readonly: readonly, _class: _class, type: 'text', noautocaps: noautocaps });
     }
 
     public static hiddeninput (id: string, val?: string): string {
-        return this.genericInput({ id: id, val: this.cleanVal(val), type: 'hidden' });
+        return this.genericInput({ id: id, val: val, type: 'hidden' });
     }
 
     public static numericinput (id: string, val?: string, placeholder?: string, _class?: string, readonly?: boolean): string {
@@ -66,12 +66,12 @@ class ViewHelpers {
 
     public static cleanVal(val?: string): string {
         if (val !== undefined)
-            return val.split('"').join('&quot;');
+            return this.escapeHtmlAttribute(val);
         return '';
     }
 
     protected static getClass(_class?:string): string {
-        return _class!==undefined?` class="${_class}"`:'';
+        return _class!==undefined?` class="${this.escapeHtmlAttribute(_class)}"`:'';
     }
 
     protected static getChecked(checked?: boolean): string {
@@ -87,19 +87,32 @@ class ViewHelpers {
     }
 
     protected static getInputmode(inputmode?: string): string {
-        return inputmode!==undefined?` inputmode="${inputmode}"`:'';
+        return inputmode!==undefined?` inputmode="${this.escapeHtmlAttribute(inputmode)}"`:'';
     }
 
     protected static getPlaceholder(placeholder?: string): string {
-        return placeholder?.trim()!='' && placeholder !== undefined?` placeholder="${placeholder}"`:'';
+        return placeholder?.trim()!='' && placeholder !== undefined?` placeholder="${this.escapeHtmlAttribute(placeholder)}"`:'';
     }
 
     protected static getValue(value?: string): string {
-        return value?.trim()!='' && value !== undefined?` value="${value}"`:'';
+        return value?.trim()!='' && value !== undefined?` value="${this.escapeHtmlAttribute(value)}"`:'';
     }
     
-    protected static getCustom(value?: string): string {
-        return value?.trim()!='' && value !== undefined?` ${value}`:'';
+    public static escapeHtmlText(value?: string): string {
+        return (value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    public static escapeHtmlAttribute(value?: string): string {
+        return this.escapeHtmlText(value);
+    }
+
+    protected static getCustom(value?: Record<string, string | number | boolean>): string {
+        if (!value) return '';
+        return Object.keys(value).map((name) => {
+            const item = value[name];
+            if (!/^[a-z][a-z0-9-]*$/i.test(name) || item === false) return '';
+            return item === true ? ` ${name}` : ` ${name}="${this.escapeHtmlAttribute(String(item))}"`;
+        }).join('');
     }
 
 }

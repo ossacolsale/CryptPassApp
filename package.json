@@ -1,17 +1,19 @@
 {
   "name": "com.cryptpass.app",
   "displayName": "CryptPassApp",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "description": "A sample Apache Cordova application that responds to the deviceready event.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "test-android": "tsc && cordova run android",
-    "test-android-device": "tsc && cordova run android --device",
-    "test-electron": "tsc && cordova run electron --nobuild",
+    "test": "node --test tests/*.test.js",
+    "test-android": "npm run cryptpass:build && tsc && cordova run android",
+    "test-android-device": "npm run cryptpass:build && tsc && cordova run android --device",
+    "test-electron": "npm run electron-compile && cordova run electron",
     "build-electron": "npm run electron-compile && cordova build electron --release",
-    "build-android": "cordova build android --release",
-    "electron-compile": "tsc && node setup-electron.js"
+    "build-android": "npm run cryptpass:build && tsc && cordova build android --release",
+    "electron-compile": "npm run cryptpass:build && tsc",
+    "cryptpass:build": "npm run build --prefix node_modules/cryptpass && npm run bundle --prefix node_modules/cryptpass && node scripts/copy-cryptpass-bundle.js",
+    "postinstall": "node scripts/patch-cordova-electron.js"
   },
   "keywords": [
     "ecosystem:cordova"
@@ -22,12 +24,18 @@
     "@types/jquery": "^3.5.14",
     "@types/wicg-file-system-access": "^2020.9.5",
     "cordova-android": "^14.0.1",
-    "cordova-browser": "^6.0.0",
+    "cordova-browser": "7.0.0",
     "cordova-clipboard": "^1.3.0",
-    "cordova-electron": "^3.1.0",
+    "cordova-electron": "4.0.0",
     "cordova-plugin-save-dialog": "github:ossacolsale/cordova-plugin-save-dialog-CUSTOM",
     "cordova-plugin-secure-storage-echo": "^5.1.1",
-    "cordova-plugin-simple-file-chooser": "github:ossacolsale/cordova-plugin-simple-file-chooser-CUSTOM"
+    "cordova-plugin-simple-file-chooser": "github:ossacolsale/cordova-plugin-simple-file-chooser-CUSTOM",
+    "electron": "44.4.5",
+    "esbuild": "^0.28.2",
+    "events": "^3.3.0",
+    "jsdom": "^26.1.0",
+    "process": "^0.11.10",
+    "typescript": "^5.9.3"
   },
   "cordova": {
     "platforms": [
@@ -41,5 +49,13 @@
       "cordova-plugin-simple-file-chooser": {},
       "cordova-plugin-secure-storage-echo": {}
     }
+  },
+  "dependencies": {
+    "cryptpass": "git+https://github.com/ossacolsale/CryptPass.git#aa2d9e5800d1c797403f2d0428a1e4217abd32bf"
+  },
+  "overrides": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "tar": "7.5.22"
   }
 }

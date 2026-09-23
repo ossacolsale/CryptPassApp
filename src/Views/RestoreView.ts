@@ -153,9 +153,9 @@ class RestoreView extends View implements ViewModel {
                 const res = await Config.selectKeyPassUri();
                 this.showEl(this.IdFileUriP);
                 if (res !== false) {
-                    this.setInner(this.IdFileUri,res);
+                    this.setText(this.IdFileUri,res);
                 } else {
-                    this.setInner(this.IdFileUri,this.DefaultNoFile);
+                    this.setText(this.IdFileUri,this.DefaultNoFile);
                 }
             break;
             case 'maintainSequence':
@@ -177,7 +177,7 @@ class RestoreView extends View implements ViewModel {
     }
 
     protected async confirmRestoreWallet() {
-        const newFile = this.isChecked(this.IdChooseFile) ? this.getInner(this.IdFileUri) : undefined;
+        const newFile = this.isChecked(this.IdChooseFile) ? this.getText(this.IdFileUri) : undefined;
         const newSequence = this.isChecked(this.IdInsertSequence) ? this._sequence : undefined;
         const ok = await this._ca.setSequenceAndKeyPassUri(newSequence, newFile);
         if (ok) {
@@ -205,7 +205,7 @@ class RestoreView extends View implements ViewModel {
             break;
             case 'confirm':
                 if (this._sequence.length == 26) {
-                    this.setInner(this.IdSequence,this.getInner(this.IdSequenceComposer));
+                    this.setMarkup(this.IdSequence,this.getText(this.IdSequenceComposer));
                     this.showEl(this.IdRestoreWallet);
                     this.hideEl(this.IdSelectSequence);
                 } else {
@@ -222,7 +222,7 @@ class RestoreView extends View implements ViewModel {
     }
 
     protected printSequence() {
-        this.setInner(this.IdSequenceComposer,this._sequence.join(', '));
+        this.setMarkup(this.IdSequenceComposer,this._sequence.join(', '));
     }
 
     protected async handleKO (step: KOsteps = 'KOStart') {
@@ -342,12 +342,12 @@ class RestoreView extends View implements ViewModel {
             &&   
             (
                 this.isChecked(this.IdMaintainFile) ||
-                (this.isChecked(this.IdChooseFile) && this.getInner(this.IdFileUri) != this.DefaultNoFile)
+                (this.isChecked(this.IdChooseFile) && this.getText(this.IdFileUri) != this.DefaultNoFile)
             )
             &&
             (
                 this.isChecked(this.IdMaintainSequence) ||
-                (this.isChecked(this.IdInsertSequence) && this.getInner(this.IdSequence) != this.DefaultNoSequence)
+                (this.isChecked(this.IdInsertSequence) && this.getText(this.IdSequence) != this.DefaultNoSequence)
             )
         ) this.showEl(this.IdConfirm);
         else this.hideEl(this.IdConfirm);

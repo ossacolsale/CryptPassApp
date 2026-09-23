@@ -13,6 +13,23 @@ declare class State {
     static set EntriesManage(em: EntriesManage | null);
     static logout(): void;
 }
+declare class AutoLock {
+    private static readonly inactivityMs;
+    private static readonly clipboardClearMs;
+    private static inactivityTimer;
+    private static clipboardTimer;
+    private static copiedSecret;
+    private static listening;
+    private static removeElectronListener;
+    static start(): void;
+    private static reset;
+    private static onVisibilityChange;
+    private static onWindowBlur;
+    static stop(): void;
+    static scheduleClipboardCleanup(secret: string): void;
+    static clearClipboardIfUnchanged(): Promise<void>;
+    private static lock;
+}
 declare class AppActions {
     Unlock(pwd: string): Promise<boolean>;
 }
@@ -128,8 +145,9 @@ declare abstract class View implements ViewModel {
     protected hideEl(elId: string): void;
     protected setApp(content: string, onBackButton?: TBackButton): void;
     protected setVal(elId: string, value: string): void;
-    protected setInner(elId: string, content: string): void;
-    protected getInner(elId: string): string;
+    protected setMarkup(elId: string, content: string): void;
+    protected getText(elId: string): string;
+    protected setText(elId: string, content: string): void;
     protected getEl(elId: string): HTMLElement;
     protected isChecked(elId: string): boolean;
     protected getVal(elId: string, raw?: boolean): string;
@@ -143,12 +161,10 @@ declare abstract class View implements ViewModel {
 }
 declare const defaultMimeType: string;
 declare class ElectronFS {
-    protected static fwrite(fileContent: string, fileUri: string): Promise<boolean>;
-    protected static fread(fileUri: string): Promise<string | false>;
-    protected static selectFile(): Promise<ElectronFile | null>;
+    protected static get desktop(): CryptPassDesktopAPI;
     static NewFile(fileName: string, fileContent: string): Promise<string | false>;
-    static WriteFile(uri: string, fileContent: string): Promise<boolean>;
-    static ReadFile(uri: string): Promise<string | false>;
+    static WriteFile(handle: string, fileContent: string): Promise<boolean>;
+    static ReadFile(handle: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
 declare class AndroidFS {
@@ -156,7 +172,6 @@ declare class AndroidFS {
     static WriteFile(uri: string, fileContent: string): Promise<boolean>;
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
-    protected static getGrantOnDir(startPath: string): Promise<boolean>;
 }
 declare class FS {
     static NewFile(fileName: string, fileContent: string): Promise<string | false>;
@@ -212,15 +227,15 @@ interface InputAttrs {
     placeholder?: string;
     noautocaps?: boolean;
     inputmode?: 'numeric' | 'text' | 'tel' | 'email' | 'decimal';
-    custom?: string;
+    custom?: Record<string, string | number | boolean>;
 }
 declare class ViewHelpers {
     static get Instructions(): string;
     static submit(id: string, val: string, _class?: string): string;
-    static button(id: string, val: string, _class?: string, custom?: string): string;
+    static button(id: string, val: string, _class?: string, custom?: Record<string, string | number | boolean>): string;
     static label(forId: string, val: string, _class?: string): string;
     protected static genericInput(attrs: InputAttrs): string;
-    static checkbox(id: string, val?: string, checked?: boolean, _class?: string, custom?: string): string;
+    static checkbox(id: string, val?: string, checked?: boolean, _class?: string, custom?: Record<string, string | number | boolean>): string;
     static textinput(id: string, val?: string, placeholder?: string, _class?: string, readonly?: boolean, noautocaps?: boolean): string;
     static hiddeninput(id: string, val?: string): string;
     static numericinput(id: string, val?: string, placeholder?: string, _class?: string, readonly?: boolean): string;
@@ -233,7 +248,9 @@ declare class ViewHelpers {
     protected static getInputmode(inputmode?: string): string;
     protected static getPlaceholder(placeholder?: string): string;
     protected static getValue(value?: string): string;
-    protected static getCustom(value?: string): string;
+    static escapeHtmlText(value?: string): string;
+    static escapeHtmlAttribute(value?: string): string;
+    protected static getCustom(value?: Record<string, string | number | boolean>): string;
 }
 declare class DescrView extends View implements ViewModel {
     onBackButton: TBackButton;
@@ -351,7 +368,9 @@ declare class PassView extends View implements ViewModel {
     protected readonly valExt: string;
     protected readonly vocBarPre: string;
     Init(): Promise<void>;
+    protected searchTimer: number | undefined;
     protected searchRoutine(names: string[], firstTime?: boolean): void;
+    End(): void;
     protected showHideTags(): void;
     protected PrintViewOrCopyBar(refId: string, label: string): string;
     protected showHideTagsStatus: 'show' | 'hide';

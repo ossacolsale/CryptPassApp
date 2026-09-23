@@ -1,12 +1,10 @@
 class CommonHelpers {
 
     public static StandardError(e: unknown): false {
-        console.log(e);
         return false;
     }
 
     public static CustomError(msg: string): false {
-        console.log(msg);
         return false;
     }
 

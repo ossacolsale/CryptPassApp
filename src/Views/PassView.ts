@@ -60,7 +60,7 @@ class PassView extends View implements ViewModel {
         const passDescr = State.CryptPass.getPassDescription().trim();
         this.OtherCounter = 0;
         const names = State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter);
-        let out: string = `${passDescr === '' ? '' : '<p>Wallet &quot;<em>'+passDescr+'</em>&quot;</p>'}
+        let out: string = `${passDescr === '' ? '' : '<p>Wallet &quot;<em>'+ViewHelpers.escapeHtmlText(passDescr)+'</em>&quot;</p>'}
         <p>${ViewHelpers.button(this.IdLogout,'Logout',this.ClassFormBtnSec)}
         ${ViewHelpers.button(this.IdNewEntry,'Add a new entry',this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdOtherOptions,'Other options',this.ClassFormBtn)}</p>`;
@@ -95,17 +95,24 @@ class PassView extends View implements ViewModel {
         }
     }
 
+    protected searchTimer: number | undefined;
+
     protected searchRoutine (names: string[], firstTime: boolean = false) {
-        setTimeout(() => {
+        this.searchTimer = window.setTimeout(() => {
             try {
                 const s = this.getVal(this.IdSearch).trim();
                 if (s != this.searchEntry || (firstTime && this.searchEntry !== '')) {
                     this.searchEntry = s;
-                    this.setInner(this.IdEntriesList,this.PrintEntriesName(this.searchEntryName(names,s)));   
+                    this.setMarkup(this.IdEntriesList,this.PrintEntriesName(this.searchEntryName(names,s)));
                 }
             } catch (e) {}
             this.searchRoutine(names);
         },150);
+    }
+
+    public End(): void {
+        if (this.searchTimer !== undefined) window.clearTimeout(this.searchTimer);
+        this.searchTimer = undefined;
     }
 
     protected showHideTags() {
@@ -114,14 +121,14 @@ class PassView extends View implements ViewModel {
                 this.setVal(this.IdSearch,'');
                 this.showEl(this.IdTagFilter);
                 this.hideEl(this.IdSearchDiv);
-                this.setInner(this.IdShowHideTags,'Hide tags filter');
+                this.setMarkup(this.IdShowHideTags,'Hide tags filter');
                 this.showHideTagsStatus = 'show';
             break;
             case 'show':
                 this.selectTag();
                 this.hideEl(this.IdTagFilter);
                 this.showEl(this.IdSearchDiv);
-                this.setInner(this.IdShowHideTags,'Select by tags');
+                this.setMarkup(this.IdShowHideTags,'Select by tags');
                 this.showHideTagsStatus = 'hide';
             break;
         }
@@ -129,9 +136,9 @@ class PassView extends View implements ViewModel {
 
     protected PrintViewOrCopyBar(refId: string, label: string): string {
         return `<span id="${this.vocBarPre+refId}" class="d-none">
-        ${ViewHelpers.button('view_'+refId,'View '+label,this.ClassFormBtnSec,` data-view="${refId}"`)}
-        ${ViewHelpers.button('copy_'+refId,'Copy '+label,this.ClassFormBtnSec,` data-copy="${refId}"`)}
-        ${ViewHelpers.button('cancel_'+refId,' X ',this.ClassFormBtnSec,` data-cancel="${refId}"`)}
+        ${ViewHelpers.button('view_'+refId,'View '+label,this.ClassFormBtnSec,{ 'data-view': refId })}
+        ${ViewHelpers.button('copy_'+refId,'Copy '+label,this.ClassFormBtnSec,{ 'data-copy': refId })}
+        ${ViewHelpers.button('cancel_'+refId,' X ',this.ClassFormBtnSec,{ 'data-cancel': refId })}
         </span>`;
     }
 
@@ -231,16 +238,15 @@ class PassView extends View implements ViewModel {
             case 'copy':
                 switch(cordova.platformId) {
                     case 'android':
-                        cordova.plugins.clipboard.copy(this.getVal(refId+this.valExt));
+                        const androidSecret = this.getVal(refId+this.valExt);
+                        cordova.plugins.clipboard.copy(androidSecret);
+                        AutoLock.scheduleClipboardCleanup(androidSecret);
+                        this.setVal(refId, this.hideVal);
                     break;
                     case 'electron':
-                        const old_val = this.getVal(refId);
-                        const val = this.getVal(refId+this.valExt);
-                        this.setVal(refId,val);
-                        const el = this.getEl(refId) as HTMLInputElement;
-                        el.select();
-                        navigator.clipboard.writeText(el.value);
-                        this.setVal(refId,old_val);
+                        const electronSecret = this.getVal(refId+this.valExt);
+                        void navigator.clipboard.writeText(electronSecret).then(() => AutoLock.scheduleClipboardCleanup(electronSecret)).catch(() => undefined);
+                        this.setVal(refId,this.hideVal);
                     break;
                 }
                 
@@ -277,8 +283,8 @@ class PassView extends View implements ViewModel {
                     (val) => val.Name !== undefined ? val.Name : ''
                 );  
         }
-        //this.setInner(this.IdTagFilter,this.PrintTags(tags));
-        this.setInner(this.IdEntriesList,this.PrintEntriesName(entries));
+        //this.setMarkup(this.IdTagFilter,this.PrintTags(tags));
+        this.setMarkup(this.IdEntriesList,this.PrintEntriesName(entries));
     }
 
     protected CheckedTags: string[] = [];
@@ -291,7 +297,7 @@ class PassView extends View implements ViewModel {
             (tag) => {
                 const checked = this.TagsToRecheck.indexOf(tag) != -1;
                 let id = ++tagCounter;
-                tagsButtons.push(`${ViewHelpers.checkbox('tag'+id,tag,checked,'btn-check',`data-tagfilter="${tag}"`)}
+                tagsButtons.push(`${ViewHelpers.checkbox('tag'+id,tag,checked,'btn-check',{ 'data-tagfilter': tag })}
                 ${ViewHelpers.label('tag'+id,tag,'my-1 btn btn-primary btn-sm')}`);         
             }
         )
@@ -302,7 +308,7 @@ class PassView extends View implements ViewModel {
         let out = '';
         let counter = 0;
         entriesName.forEach(
-            (val) => out += `<li class="my-3">${ViewHelpers.button('Entry'+(counter++),val,this.ClassFormBtnBla,`data-name="${ViewHelpers.cleanVal(val)}"`)}</li>`
+            (val) => out += `<li class="my-3">${ViewHelpers.button('Entry'+(counter++),val,this.ClassFormBtnBla,{ 'data-name': val })}</li>`
         );
         return out;
     }
@@ -365,7 +371,7 @@ class PassView extends View implements ViewModel {
     }
 
     protected handleEdit() {
-        const entry = State.EntriesManage.GetEntry(this.getInner(this.IdNameTitle));
+        const entry = State.EntriesManage.GetEntry(this.getText(this.IdNameTitle));
         if (entry !== false) {
             this.setApp(`<p>${ViewHelpers.button(this.IdGoToView,'Cancel',this.ClassFormBtnSec)}
             ${ViewHelpers.button(this.IdDeleteEntry,'Delete entry',this.ClassFormBtnSec)}</p>
@@ -382,7 +388,7 @@ class PassView extends View implements ViewModel {
     protected handleDelete () {
         const entryName = this.getVal(this.IdNameOld);
         this.setApp(`
-        <h2>Delete entry &quot;<span id="${this.IdNameTitle}">${entryName}</span>&quot;</h2>
+        <h2>Delete entry &quot;<span id="${this.IdNameTitle}">${ViewHelpers.escapeHtmlText(entryName)}</span>&quot;</h2>
         <p>Are you sure to proceed?</p>
         <p>${ViewHelpers.submit(this.IdConfirmDeleteEntry,'Confirm delete',this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdEdit,'Cancel',this.ClassFormBtnSec)}</p>
@@ -393,7 +399,7 @@ class PassView extends View implements ViewModel {
         const entry = State.EntriesManage.GetEntry(EntryName);
         if (entry !== false)
             this.setApp(`<p>${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)} ${ViewHelpers.button(this.IdEdit,'Edit entry',this.ClassFormBtn)}</p>
-            <h2 id="${this.IdNameTitle}">${entry.Name}</h2>
+            <h2 id="${this.IdNameTitle}">${ViewHelpers.escapeHtmlText(entry.Name)}</h2>
             ${this.entryMask(entry)}
             `,() => this.clickEl(this.IdGoToInit));
         else alert('Error: entry not found');
@@ -433,10 +439,10 @@ class PassView extends View implements ViewModel {
     }
 
     protected async deleteEntry() {
-        const Name = this.getInner(this.IdNameTitle);
+        const Name = this.getText(this.IdNameTitle);
         if (State.EntriesManage.DeleteEntry(Name)) {
             this.LoaderShow();
-            const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.K,true);
+            const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.Password);
             this.LoaderHide();
             if (setresult) {
                 alert('Entry "' + Name + '" successfully removed');
@@ -466,7 +472,7 @@ class PassView extends View implements ViewModel {
                 if ((checkName == 'Changed' && State.EntriesManage.UpdateEntryName(NameOld,Name)) || checkName == 'OK') {
                     if (State.EntriesManage.UpdateEntry(this.composeEntry())) {
                         this.LoaderShow();
-                        const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.K,true);
+                        const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.Password);
                         this.LoaderHide();
                         if (setresult) {
                             this.viewEntry(Name);
@@ -492,7 +498,7 @@ class PassView extends View implements ViewModel {
             if (State.EntriesManage.GetEntry(Name) === false) {
                 if (State.EntriesManage.AddEntry(this.composeEntry())) {
                     this.LoaderShow();
-                    const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.K,true);
+                    const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.Password);
                     this.LoaderHide();
                     if (setresult) {
                         //alert('Entry correctly added to your wallet');
@@ -530,7 +536,7 @@ class PassView extends View implements ViewModel {
         let out: string = '';
         if (entry === undefined) entry = {};
         else out += ViewHelpers.hiddeninput(this.IdNameOld, entry.Name);
-        if (readonly && entry.Date !== undefined) out += `<p class="fst-italic">Last edit: <strong>${entry.Date}</strong></p>`;
+        if (readonly && entry.Date !== undefined) out += `<p class="fst-italic">Last edit: <strong>${ViewHelpers.escapeHtmlText(String(entry.Date))}</strong></p>`;
         if (!readonly) out += this.attrInput(this.IdName,'Name * (mandatory)','Put here the entry name',entry.Name === undefined ? '' : entry.Name);
         if (!readonly || entry.Tags !== undefined) out += this.attrInput(this.IdTags,'Tags','Tags comma separated (eg. &quot;work, Windows&quot;))',entry.Tags === undefined ? '' : entry.Tags, readonly, true);
         if (!readonly) {
@@ -540,7 +546,7 @@ class PassView extends View implements ViewModel {
                 let tagCounter = 0;
                 tags.forEach(
                     (tag) => {
-                        tagsButtons.push(ViewHelpers.button('tag'+(++tagCounter),tag,this.ClassFormBtn+' my-1',`data-tag="${tag}"`));
+                        tagsButtons.push(ViewHelpers.button('tag'+(++tagCounter),tag,this.ClassFormBtn+' my-1',{ 'data-tag': tag }));
                     }
                 )
                 out += `<div><span id="${this.IdSpanSelExistingTags}">${ViewHelpers.button(this.IdSelExistingTags,'Select existing tags','my-1 d-none '+this.ClassFormBtnSec)}</span>
@@ -574,14 +580,14 @@ class PassView extends View implements ViewModel {
         <div class="row mb-4" id="${this.IdOtherP+counter}">
             <div class="col-9">
                 <p class="row my-1">${readonly ? this.PrintViewOrCopyBar(this.IdOtherValue+counter,entryKey) : ''}
-                ${readonly ? `<strong>${entryKey}</strong>` : ViewHelpers.textinput(this.IdOtherKey+counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
+                ${readonly ? `<strong>${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey+counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
                 </p>
                 <p class="row my-1">${ViewHelpers.hiddeninput(this.IdOtherValue+counter+this.valExt,entryVal)}
                 ${ViewHelpers.textinput(this.IdOtherValue+counter, this.hideVal, readonly ? '' : 'Put here a custom value', this.ClassFormCtrl + ' ', readonly, true)}
                 </p>
             </div>
             <div class="col-3 align-self-center">
-                ${readonly ? '' : ViewHelpers.button(this.IdOtherDelete+counter,'&nbsp;X&nbsp;',this.ClassFormBtn,`data-counter="${counter}"`)}
+                ${readonly ? '' : ViewHelpers.button(this.IdOtherDelete+counter,' X ',this.ClassFormBtn,{ 'data-counter': counter })}
             </div>
         </div></div>`;
     }

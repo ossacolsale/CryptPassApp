@@ -8,6 +8,7 @@ class AppActions {
             State.K = k;
             State.EntriesManage = State.CryptPass.GetEntriesManage(State.K,true);
             State.Password = pwd;
+            AutoLock.start();
             return true;
         } else {
             State.Password = '';

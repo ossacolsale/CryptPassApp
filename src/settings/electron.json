@@ -1,10 +1,16 @@
 {
-    "browserWindow": {
-        "height": 600,
-        "webPreferences":{
-            "devTools": false
-        },
-        "width": 800,
-        "autoHideMenuBar": true
-    }
+  "browserWindow": {
+    "height": 600,
+    "webPreferences": {
+      "devTools": false,
+      "nodeIntegration": false,
+      "contextIsolation": true,
+      "sandbox": false,
+      "webSecurity": true,
+      "allowRunningInsecureContent": false,
+      "webviewTag": false
+    },
+    "width": 800,
+    "autoHideMenuBar": true
+  }
 }

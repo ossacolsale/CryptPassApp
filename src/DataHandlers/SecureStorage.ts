@@ -1,7 +1,7 @@
 // Creazione istanza (nome arbitrario, es. 'cryptpass_store')
 const secureStorage: SecureStorageInstance = new cordova.plugins.SecureStorage(
-    function () { console.log('Secure Storage inizializzato'); },
-    function (error) { console.error('Errore inizializzazione Secure Storage:', error); },
+    function () { /* Initialization completed. */ },
+    function () { /* Secure storage errors are handled at the call site. */ },
     'cryptpass_store' // <--- Nome del namespace delle tue chiavi
 );
 
@@ -11,9 +11,17 @@ class SecureStorage {
     public static async getVal(key: string): Promise<string|false> {
         try {
             switch (cordova.platformId) {
-                case 'electron':
-                    const val = window.localStorage.getItem(key);
-                    return val === null ? false : val;
+                case 'electron': {
+                    const val = await window.cryptPassDesktop?.secureGet(key);
+                    if (val !== false && val !== undefined) return val;
+                    // One-time migration from the former renderer localStorage implementation.
+                    const legacy = window.localStorage.getItem(key);
+                    if (legacy === null) return false;
+                    const saved = await window.cryptPassDesktop?.secureSet(key, legacy);
+                    if (saved === false || saved === undefined) return false;
+                    window.localStorage.removeItem(key);
+                    return legacy;
+                }
                 case 'android':
                     /*return new Promise((resolve, reject)=> {
                         cordova.plugins.SecureKeyStore.get(resolve, reject, key);
@@ -46,8 +54,7 @@ class SecureStorage {
         try {
             switch (cordova.platformId) {
                 case 'electron':
-                    window.localStorage.setItem(key, value);
-                    return key;
+                    return await window.cryptPassDesktop?.secureSet(key, value) ?? false;
                 case 'android':
                     /*
                     return new Promise((resolve, reject)=> {
@@ -59,7 +66,6 @@ class SecureStorage {
                                 resolve(key); 
                             },
                             function (error) { 
-                                console.error('Errore salvataggio sicuro:', error);
                                 reject(error); 
                             },
                             key,
@@ -81,8 +87,8 @@ class SecureStorage {
 
             switch (cordova.platformId) {
                 case 'electron':
-                    const val = window.localStorage.removeItem(key);
-                    return key;
+                    window.localStorage.removeItem(key);
+                    return await window.cryptPassDesktop?.secureDelete(key) ?? false;
                 case 'android':
                     return new Promise((resolve, reject)=> {
                         cordova.plugins.SecureKeyStore.remove(resolve, reject, key);

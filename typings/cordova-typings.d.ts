@@ -3,14 +3,18 @@
 /// <reference path="../plugins/cordova-plugin-save-dialog/types/index.d.ts"/>
 /// <reference path="../plugins/cordova-plugin-simple-file-chooser/types/index.d.ts"/>
 
-declare class fs {
-    static writeFileSync: (fileUri: string, fileContent: string) => Promise<boolean>;
-    static readFileSync: (fileUri: string) => Promise<string|false>;
+interface CryptPassDesktopAPI {
+    openVault(): Promise<{ handle: string; name: string; content: string } | false>;
+    createVault(name: string, content: string): Promise<string | false>;
+    readVault(handle: string): Promise<string | false>;
+    saveVault(handle: string, content: string): Promise<boolean>;
+    secureGet(key: string): Promise<string | false>;
+    secureSet(key: string, value: string): Promise<string | false>;
+    secureDelete(key: string): Promise<string | false>;
+    onLockRequested?(callback: () => void): () => void;
 }
 
-interface ElectronFile extends File {
-    path: string;
-}
+interface Window { cryptPassDesktop?: CryptPassDesktopAPI; }
 
 interface CordovaPlugins {
     SecureKeyStore: SecureKeyStore;

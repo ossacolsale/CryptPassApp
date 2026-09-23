@@ -45,7 +45,7 @@ abstract class View implements ViewModel {
     }
 
     protected setApp(content: string, onBackButton: TBackButton = () => null) {
-        this.setInner(this.IdAppDiv, content);
+        this.setMarkup(this.IdAppDiv, content);
         this.onBackButton = onBackButton;
     }
 
@@ -53,12 +53,17 @@ abstract class View implements ViewModel {
         $('#'+elId).val(value);
     }
 
-    protected setInner(elId: string, content: string) {
+    protected setMarkup(elId: string, content: string) {
         $('#'+elId).html(content);
     }
 
-    protected getInner(elId: string): string {
-        return $('#'+elId).html();
+    protected getText(elId: string): string {
+        return $('#'+elId).text();
+    }
+
+    protected setText(elId: string, content: string): void {
+        const element = this.getEl(elId);
+        element.textContent = content;
     }
 
     protected getEl(elId: string): HTMLElement {

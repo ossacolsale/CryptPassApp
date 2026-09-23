@@ -8,6 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var _a;
 class State {
     static get K() {
         return this.__K_;
@@ -38,6 +39,8 @@ class State {
         this.__EntriesManage_ = em;
     }
     static logout() {
+        void AutoLock.clearClipboardIfUnchanged();
+        AutoLock.stop();
         this.__CryptPass_ = null;
         this.__EntriesManage_ = null;
         this.__K_ = '';
@@ -47,6 +50,88 @@ class State {
 State.__K_ = '';
 State.__Password_ = '';
 document.addEventListener('deviceready', () => ScenarioController.changeScenario(new WelcomeView()), false);
+class AutoLock {
+    static start() {
+        var _b, _c;
+        if (!this.listening) {
+            this.listening = true;
+            ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, this.reset, { passive: true }));
+            document.addEventListener('visibilitychange', this.onVisibilityChange);
+            document.addEventListener('pause', this.lock);
+            window.addEventListener('blur', this.onWindowBlur);
+            this.removeElectronListener = (_c = (_b = window.cryptPassDesktop) === null || _b === void 0 ? void 0 : _b.onLockRequested) === null || _c === void 0 ? void 0 : _c.call(_b, this.lock);
+        }
+        this.reset();
+    }
+    static stop() {
+        var _b;
+        if (this.inactivityTimer !== undefined)
+            window.clearTimeout(this.inactivityTimer);
+        if (this.clipboardTimer !== undefined)
+            window.clearTimeout(this.clipboardTimer);
+        this.inactivityTimer = undefined;
+        this.clipboardTimer = undefined;
+        this.copiedSecret = null;
+        (_b = this.removeElectronListener) === null || _b === void 0 ? void 0 : _b.call(this);
+        this.removeElectronListener = undefined;
+        this.listening = false;
+        ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.removeEventListener(type, this.reset));
+        document.removeEventListener('visibilitychange', this.onVisibilityChange);
+        document.removeEventListener('pause', this.lock);
+        window.removeEventListener('blur', this.onWindowBlur);
+    }
+    static scheduleClipboardCleanup(secret) {
+        if (this.clipboardTimer !== undefined)
+            window.clearTimeout(this.clipboardTimer);
+        this.copiedSecret = secret;
+        this.clipboardTimer = window.setTimeout(() => { void this.clearClipboardIfUnchanged(); }, this.clipboardClearMs);
+    }
+    static clearClipboardIfUnchanged() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _b, _c;
+            const secret = this.copiedSecret;
+            this.copiedSecret = null;
+            if (this.clipboardTimer !== undefined)
+                window.clearTimeout(this.clipboardTimer);
+            this.clipboardTimer = undefined;
+            if (!secret)
+                return;
+            try {
+                if (cordova.platformId === 'android') {
+                    cordova.plugins.clipboard.paste((value) => { if (value === secret)
+                        cordova.plugins.clipboard.copy(''); }, () => undefined);
+                }
+                else if (((_b = navigator.clipboard) === null || _b === void 0 ? void 0 : _b.readText) && ((_c = navigator.clipboard) === null || _c === void 0 ? void 0 : _c.writeText)) {
+                    const current = yield navigator.clipboard.readText();
+                    if (current === secret)
+                        yield navigator.clipboard.writeText('');
+                }
+            }
+            catch (_) { }
+        });
+    }
+}
+_a = AutoLock;
+AutoLock.inactivityMs = 5 * 60 * 1000;
+AutoLock.clipboardClearMs = 60 * 1000;
+AutoLock.copiedSecret = null;
+AutoLock.listening = false;
+AutoLock.reset = () => {
+    if (_a.inactivityTimer !== undefined)
+        window.clearTimeout(_a.inactivityTimer);
+    if (State.Password !== '')
+        _a.inactivityTimer = window.setTimeout(_a.lock, _a.inactivityMs);
+};
+AutoLock.onVisibilityChange = () => { if (document.visibilityState === 'hidden')
+    _a.lock(); };
+AutoLock.onWindowBlur = () => { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden')
+    _a.lock(); };
+AutoLock.lock = () => {
+    if (State.Password === '')
+        return;
+    State.logout();
+    ScenarioController.changeScenario(new MainView());
+};
 class AppActions {
     Unlock(pwd) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -57,6 +142,7 @@ class AppActions {
                 State.K = k;
                 State.EntriesManage = State.CryptPass.GetEntriesManage(State.K, true);
                 State.Password = pwd;
+                AutoLock.start();
                 return true;
             }
             else {
@@ -96,8 +182,8 @@ class Config {
         });
     }
     static getPreferences() {
-        var _b;
         return __awaiter(this, void 0, void 0, function* () {
+            var _b;
             const config = yield this.getConfig();
             if (config !== false) {
                 return (_b = config.Preferences) !== null && _b !== void 0 ? _b : this.defaultPreferences;
@@ -193,8 +279,8 @@ class Config {
                 return false;
         });
     }
-    static newKeyPass(kp = {}) {
-        return __awaiter(this, void 0, void 0, function* () {
+    static newKeyPass() {
+        return __awaiter(this, arguments, void 0, function* (kp = {}) {
             const uri = yield FS.NewFile(this.defaultKeyPassFilename, JSON.stringify(kp));
             if (uri !== false) {
                 return this.setKeyPassUri(uri);
@@ -446,17 +532,21 @@ class View {
         $('#' + elId).toggleClass('d-none');
     }
     setApp(content, onBackButton = () => null) {
-        this.setInner(this.IdAppDiv, content);
+        this.setMarkup(this.IdAppDiv, content);
         this.onBackButton = onBackButton;
     }
     setVal(elId, value) {
         $('#' + elId).val(value);
     }
-    setInner(elId, content) {
+    setMarkup(elId, content) {
         $('#' + elId).html(content);
     }
-    getInner(elId) {
-        return $('#' + elId).html();
+    getText(elId) {
+        return $('#' + elId).text();
+    }
+    setText(elId, content) {
+        const element = this.getEl(elId);
+        element.textContent = content;
     }
     getEl(elId) {
         return $('#' + elId)[0];
@@ -494,8 +584,8 @@ class View {
                     doSomethingAfterHiding(res);
             }, this.LoaderShowMs);
     }
-    LoaderShowAsync(doSomethingBeforeHiding, doSomethingAfterHiding, hideAfter = true) {
-        return __awaiter(this, void 0, void 0, function* () {
+    LoaderShowAsync(doSomethingBeforeHiding_1, doSomethingAfterHiding_1) {
+        return __awaiter(this, arguments, void 0, function* (doSomethingBeforeHiding, doSomethingAfterHiding, hideAfter = true) {
             this.LoaderShowCommands();
             if (doSomethingBeforeHiding !== undefined)
                 setTimeout(() => __awaiter(this, void 0, void 0, function* () {
@@ -554,83 +644,35 @@ class View {
 }
 const defaultMimeType = 'text/plain';
 class ElectronFS {
-    static fwrite(fileContent, fileUri) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                yield fs.writeFileSync(fileUri, fileContent);
-                return true;
-            }
-            catch (e) {
-                return CommonHelpers.StandardError(e);
-            }
-        });
-    }
-    static fread(fileUri) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                return fs.readFileSync(fileUri);
-            }
-            catch (e) {
-                return CommonHelpers.StandardError(e);
-            }
-        });
-    }
-    static selectFile() {
-        return __awaiter(this, void 0, void 0, function* () {
-            let input = document.createElement('input');
-            input.type = 'file';
-            input.accept = defaultMimeType;
-            return new Promise((resolve, reject) => {
-                input.onchange = _this => {
-                    if (input.files !== null) {
-                        resolve(input.files[0]);
-                    }
-                    else {
-                        reject(null);
-                    }
-                };
-                input.click();
-            });
-        });
+    static get desktop() {
+        if (!window.cryptPassDesktop)
+            throw new Error('Desktop file service unavailable');
+        return window.cryptPassDesktop;
     }
     static NewFile(fileName, fileContent) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const file = yield this.selectFile();
-                if (file !== null) {
-                    yield this.fwrite(fileContent, file.path);
-                    window.localStorage.setItem(file.path, fileContent);
-                    return file.path;
-                }
-                else
-                    throw new Error('No file selected');
+                return yield this.desktop.createVault(fileName, fileContent);
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
             }
         });
     }
-    static WriteFile(uri, fileContent) {
+    static WriteFile(handle, fileContent) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const uri_content = yield this.fread(uri);
-                const uri_bk_content = window.localStorage.getItem(uri);
-                this.fwrite(fileContent, uri);
-                if (uri_content !== false && uri_content != uri_bk_content)
-                    window.localStorage.setItem(uri, uri_content);
-                if (uri_content === false && uri_bk_content === null)
-                    window.localStorage.setItem(uri, fileContent);
-                return true;
+                return yield this.desktop.saveVault(handle, fileContent);
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
             }
         });
     }
-    static ReadFile(uri) {
+    static ReadFile(handle) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                return this.fread(uri);
+                return yield this.desktop.readVault(handle);
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -640,21 +682,10 @@ class ElectronFS {
     static SelectAndReadFile() {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const file = yield this.selectFile();
-                if (file !== null) {
-                    const content = yield this.fread(file.path);
-                    if (content !== false)
-                        return [{
-                                uri: file.path,
-                                name: file.name,
-                                mediaType: file.type,
-                                content: content
-                            }];
-                    else
-                        throw new Error('Error reading file');
-                }
-                else
-                    throw new Error('No file selected');
+                const selected = yield this.desktop.openVault();
+                if (!selected)
+                    return false;
+                return [{ uri: selected.handle, name: selected.name, mediaType: defaultMimeType, content: selected.content }];
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -670,7 +701,6 @@ class AndroidFS {
                 const uri = yield cordova.plugins.saveDialog.getFileUri(blob, fileName);
                 yield cordova.plugins.saveDialog.saveFileByUri(blob, uri);
                 window.localStorage.setItem(uri, fileContent);
-                yield this.getGrantOnDir(uri);
                 return uri;
             }
             catch (e) {
@@ -684,11 +714,11 @@ class AndroidFS {
                 const blob = new Blob([fileContent], { type: defaultMimeType });
                 const uri_content = yield this.ReadFile(uri);
                 const uri_bk_content = window.localStorage.getItem(uri);
-                yield cordova.plugins.saveDialog.saveFileByUri(blob, uri);
-                if (uri_content !== false && uri_content != uri_bk_content)
+                if (uri_content !== false && uri_content !== uri_bk_content)
                     window.localStorage.setItem(uri, uri_content);
                 if (uri_content === false && uri_bk_content === null)
                     window.localStorage.setItem(uri, fileContent);
+                yield cordova.plugins.saveDialog.saveFileByUri(blob, uri);
                 return true;
             }
             catch (e) {
@@ -711,7 +741,6 @@ class AndroidFS {
             try {
                 const chooserResult = yield chooser.getFiles(defaultMimeType, () => null, () => null);
                 if (chooserResult.length > 0) {
-                    yield this.getGrantOnDir(chooserResult[0].uri);
                     return chooserResult;
                 }
                 else
@@ -722,13 +751,6 @@ class AndroidFS {
             }
         });
     }
-    static getGrantOnDir(startPath) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return true;
-            alert('Please grant permanent access to the selected directory.');
-            return yield chooser.grantDir(startPath, () => null, () => null);
-        });
-    }
 }
 class FS {
     static NewFile(fileName, fileContent) {
@@ -737,7 +759,6 @@ class FS {
                 case 'android':
                     return AndroidFS.NewFile(fileName, fileContent);
                 case 'electron':
-                    alert('You must create an empty txt file and then select it');
                     return ElectronFS.NewFile(fileName, fileContent);
                 default:
                     return false;
@@ -818,15 +839,26 @@ class LocalStorage {
 LocalStorage.initialized = '1';
 LocalStorage.firsttime = '0';
 LocalStorage.passwordexpirationdays = 30;
-const secureStorage = new cordova.plugins.SecureStorage(function () { console.log('Secure Storage inizializzato'); }, function (error) { console.error('Errore inizializzazione Secure Storage:', error); }, 'cryptpass_store');
+const secureStorage = new cordova.plugins.SecureStorage(function () { }, function () { }, 'cryptpass_store');
 class SecureStorage {
     static getVal(key) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 switch (cordova.platformId) {
-                    case 'electron':
-                        const val = window.localStorage.getItem(key);
-                        return val === null ? false : val;
+                    case 'electron': {
+                        const val = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureGet(key));
+                        if (val !== false && val !== undefined)
+                            return val;
+                        const legacy = window.localStorage.getItem(key);
+                        if (legacy === null)
+                            return false;
+                        const saved = yield ((_b = window.cryptPassDesktop) === null || _b === void 0 ? void 0 : _b.secureSet(key, legacy));
+                        if (saved === false || saved === undefined)
+                            return false;
+                        window.localStorage.removeItem(key);
+                        return legacy;
+                    }
                     case 'android':
                         return new Promise((resolve, reject) => {
                             secureStorage.get(function (value) {
@@ -851,17 +883,16 @@ class SecureStorage {
     }
     static setVal(key, value) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron':
-                        window.localStorage.setItem(key, value);
-                        return key;
+                        return (_b = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureSet(key, value))) !== null && _b !== void 0 ? _b : false;
                     case 'android':
                         return new Promise((resolve, reject) => {
                             secureStorage.set(function (key) {
                                 resolve(key);
                             }, function (error) {
-                                console.error('Errore salvataggio sicuro:', error);
                                 reject(error);
                             }, key, value);
                         });
@@ -876,11 +907,12 @@ class SecureStorage {
     }
     static delVal(key) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron':
-                        const val = window.localStorage.removeItem(key);
-                        return key;
+                        window.localStorage.removeItem(key);
+                        return (_b = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureDelete(key))) !== null && _b !== void 0 ? _b : false;
                     case 'android':
                         return new Promise((resolve, reject) => {
                             cordova.plugins.SecureKeyStore.remove(resolve, reject, key);
@@ -897,11 +929,9 @@ class SecureStorage {
 }
 class CommonHelpers {
     static StandardError(e) {
-        console.log(e);
         return false;
     }
     static CustomError(msg) {
-        console.log(msg);
         return false;
     }
     static CheckNewPassword(pwd1, pwd2) {
@@ -1019,25 +1049,25 @@ class ViewHelpers {
         `;
     }
     static submit(id, val, _class) {
-        return `<input type="submit"${this.getClass(_class)} id="${id}" value="${this.cleanVal(val)}" />`;
+        return `<input type="submit"${this.getClass(_class)} id="${id}" value="${this.escapeHtmlAttribute(val)}" />`;
     }
     static button(id, val, _class, custom) {
-        return `<button${this.getClass(_class)} type="button" id="${id}"${custom !== undefined ? ' ' + custom : ''}>${val}</button>`;
+        return `<button${this.getClass(_class)} type="button" id="${this.escapeHtmlAttribute(id)}"${this.getCustom(custom)}>${this.escapeHtmlText(val)}</button>`;
     }
     static label(forId, val, _class) {
-        return `<label${this.getClass(_class)} for="${forId}">${val}</label>`;
+        return `<label${this.getClass(_class)} for="${this.escapeHtmlAttribute(forId)}">${this.escapeHtmlText(val)}</label>`;
     }
     static genericInput(attrs) {
-        return `<input${this.getClass(attrs._class)}${this.getChecked(attrs.checked)}${this.getInputmode(attrs.inputmode)}${this.getReadonly(attrs.readonly)}${this.getPlaceholder(attrs.placeholder)}${this.getNoautocaps(attrs.noautocaps)}${this.getValue(attrs.val)}${this.getCustom(attrs.custom)} type="${attrs.type}" id="${attrs.id}" />`;
+        return `<input${this.getClass(attrs._class)}${this.getChecked(attrs.checked)}${this.getInputmode(attrs.inputmode)}${this.getReadonly(attrs.readonly)}${this.getPlaceholder(attrs.placeholder)}${this.getNoautocaps(attrs.noautocaps)}${this.getValue(attrs.val)}${this.getCustom(attrs.custom)} type="${this.escapeHtmlAttribute(attrs.type)}" id="${this.escapeHtmlAttribute(attrs.id)}" />`;
     }
     static checkbox(id, val, checked = false, _class, custom) {
-        return this.genericInput({ id: id, val: this.cleanVal(val), checked: checked, _class: _class, type: 'checkbox', custom: custom });
+        return this.genericInput({ id: id, val: val, checked: checked, _class: _class, type: 'checkbox', custom: custom });
     }
     static textinput(id, val, placeholder, _class, readonly, noautocaps) {
-        return this.genericInput({ id: id, val: this.cleanVal(val), placeholder: placeholder, readonly: readonly, _class: _class, type: 'text', noautocaps: noautocaps });
+        return this.genericInput({ id: id, val: val, placeholder: placeholder, readonly: readonly, _class: _class, type: 'text', noautocaps: noautocaps });
     }
     static hiddeninput(id, val) {
-        return this.genericInput({ id: id, val: this.cleanVal(val), type: 'hidden' });
+        return this.genericInput({ id: id, val: val, type: 'hidden' });
     }
     static numericinput(id, val, placeholder, _class, readonly) {
         return this.genericInput({ id: id, val: val, placeholder: placeholder, readonly: readonly, _class: _class, type: 'text', inputmode: 'numeric' });
@@ -1047,11 +1077,11 @@ class ViewHelpers {
     }
     static cleanVal(val) {
         if (val !== undefined)
-            return val.split('"').join('&quot;');
+            return this.escapeHtmlAttribute(val);
         return '';
     }
     static getClass(_class) {
-        return _class !== undefined ? ` class="${_class}"` : '';
+        return _class !== undefined ? ` class="${this.escapeHtmlAttribute(_class)}"` : '';
     }
     static getChecked(checked) {
         return checked ? ' checked="checked"' : '';
@@ -1063,16 +1093,29 @@ class ViewHelpers {
         return noautocaps ? ' autocapitalize="off"' : '';
     }
     static getInputmode(inputmode) {
-        return inputmode !== undefined ? ` inputmode="${inputmode}"` : '';
+        return inputmode !== undefined ? ` inputmode="${this.escapeHtmlAttribute(inputmode)}"` : '';
     }
     static getPlaceholder(placeholder) {
-        return (placeholder === null || placeholder === void 0 ? void 0 : placeholder.trim()) != '' && placeholder !== undefined ? ` placeholder="${placeholder}"` : '';
+        return (placeholder === null || placeholder === void 0 ? void 0 : placeholder.trim()) != '' && placeholder !== undefined ? ` placeholder="${this.escapeHtmlAttribute(placeholder)}"` : '';
     }
     static getValue(value) {
-        return (value === null || value === void 0 ? void 0 : value.trim()) != '' && value !== undefined ? ` value="${value}"` : '';
+        return (value === null || value === void 0 ? void 0 : value.trim()) != '' && value !== undefined ? ` value="${this.escapeHtmlAttribute(value)}"` : '';
+    }
+    static escapeHtmlText(value) {
+        return (value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    static escapeHtmlAttribute(value) {
+        return this.escapeHtmlText(value);
     }
     static getCustom(value) {
-        return (value === null || value === void 0 ? void 0 : value.trim()) != '' && value !== undefined ? ` ${value}` : '';
+        if (!value)
+            return '';
+        return Object.keys(value).map((name) => {
+            const item = value[name];
+            if (!/^[a-z][a-z0-9-]*$/i.test(name) || item === false)
+                return '';
+            return item === true ? ` ${name}` : ` ${name}="${this.escapeHtmlAttribute(String(item))}"`;
+        }).join('');
     }
 }
 class DescrView extends View {
@@ -1124,8 +1167,8 @@ class DescrView extends View {
             }
         });
     }
-    handleSet(remove = false) {
-        return __awaiter(this, void 0, void 0, function* () {
+    handleSet() {
+        return __awaiter(this, arguments, void 0, function* (remove = false) {
             const descr = this.getEl(this.IdDescription).value.trim();
             if (descr.length > 0 || remove) {
                 this.LoaderShow();
@@ -1215,7 +1258,7 @@ class MainView extends View {
                         }
                     }
                     catch (e) {
-                        alert(e);
+                        alert('Unable to access the encrypted wallet. Check its file and secure storage.');
                     }
                     break;
                 case 'MissingKeypass':
@@ -1568,7 +1611,7 @@ class PassView extends View {
             const passDescr = State.CryptPass.getPassDescription().trim();
             this.OtherCounter = 0;
             const names = State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter);
-            let out = `${passDescr === '' ? '' : '<p>Wallet &quot;<em>' + passDescr + '</em>&quot;</p>'}
+            let out = `${passDescr === '' ? '' : '<p>Wallet &quot;<em>' + ViewHelpers.escapeHtmlText(passDescr) + '</em>&quot;</p>'}
         <p>${ViewHelpers.button(this.IdLogout, 'Logout', this.ClassFormBtnSec)}
         ${ViewHelpers.button(this.IdNewEntry, 'Add a new entry', this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdOtherOptions, 'Other options', this.ClassFormBtn)}</p>`;
@@ -1605,17 +1648,22 @@ class PassView extends View {
         });
     }
     searchRoutine(names, firstTime = false) {
-        setTimeout(() => {
+        this.searchTimer = window.setTimeout(() => {
             try {
                 const s = this.getVal(this.IdSearch).trim();
                 if (s != this.searchEntry || (firstTime && this.searchEntry !== '')) {
                     this.searchEntry = s;
-                    this.setInner(this.IdEntriesList, this.PrintEntriesName(this.searchEntryName(names, s)));
+                    this.setMarkup(this.IdEntriesList, this.PrintEntriesName(this.searchEntryName(names, s)));
                 }
             }
             catch (e) { }
             this.searchRoutine(names);
         }, 150);
+    }
+    End() {
+        if (this.searchTimer !== undefined)
+            window.clearTimeout(this.searchTimer);
+        this.searchTimer = undefined;
     }
     showHideTags() {
         switch (this.showHideTagsStatus) {
@@ -1623,23 +1671,23 @@ class PassView extends View {
                 this.setVal(this.IdSearch, '');
                 this.showEl(this.IdTagFilter);
                 this.hideEl(this.IdSearchDiv);
-                this.setInner(this.IdShowHideTags, 'Hide tags filter');
+                this.setMarkup(this.IdShowHideTags, 'Hide tags filter');
                 this.showHideTagsStatus = 'show';
                 break;
             case 'show':
                 this.selectTag();
                 this.hideEl(this.IdTagFilter);
                 this.showEl(this.IdSearchDiv);
-                this.setInner(this.IdShowHideTags, 'Select by tags');
+                this.setMarkup(this.IdShowHideTags, 'Select by tags');
                 this.showHideTagsStatus = 'hide';
                 break;
         }
     }
     PrintViewOrCopyBar(refId, label) {
         return `<span id="${this.vocBarPre + refId}" class="d-none">
-        ${ViewHelpers.button('view_' + refId, 'View ' + label, this.ClassFormBtnSec, ` data-view="${refId}"`)}
-        ${ViewHelpers.button('copy_' + refId, 'Copy ' + label, this.ClassFormBtnSec, ` data-copy="${refId}"`)}
-        ${ViewHelpers.button('cancel_' + refId, ' X ', this.ClassFormBtnSec, ` data-cancel="${refId}"`)}
+        ${ViewHelpers.button('view_' + refId, 'View ' + label, this.ClassFormBtnSec, { 'data-view': refId })}
+        ${ViewHelpers.button('copy_' + refId, 'Copy ' + label, this.ClassFormBtnSec, { 'data-copy': refId })}
+        ${ViewHelpers.button('cancel_' + refId, ' X ', this.ClassFormBtnSec, { 'data-cancel': refId })}
         </span>`;
     }
     searchEntryName(names, name) {
@@ -1740,16 +1788,15 @@ class PassView extends View {
             case 'copy':
                 switch (cordova.platformId) {
                     case 'android':
-                        cordova.plugins.clipboard.copy(this.getVal(refId + this.valExt));
+                        const androidSecret = this.getVal(refId + this.valExt);
+                        cordova.plugins.clipboard.copy(androidSecret);
+                        AutoLock.scheduleClipboardCleanup(androidSecret);
+                        this.setVal(refId, this.hideVal);
                         break;
                     case 'electron':
-                        const old_val = this.getVal(refId);
-                        const val = this.getVal(refId + this.valExt);
-                        this.setVal(refId, val);
-                        const el = this.getEl(refId);
-                        el.select();
-                        navigator.clipboard.writeText(el.value);
-                        this.setVal(refId, old_val);
+                        const electronSecret = this.getVal(refId + this.valExt);
+                        void navigator.clipboard.writeText(electronSecret).then(() => AutoLock.scheduleClipboardCleanup(electronSecret)).catch(() => undefined);
+                        this.setVal(refId, this.hideVal);
                         break;
                 }
                 break;
@@ -1781,7 +1828,7 @@ class PassView extends View {
                 const ev = TagHelpers.getAllEntriesFromTags(this.CheckedTags, State.EntriesManage);
                 entries = ev.map((val) => val.Name !== undefined ? val.Name : '');
         }
-        this.setInner(this.IdEntriesList, this.PrintEntriesName(entries));
+        this.setMarkup(this.IdEntriesList, this.PrintEntriesName(entries));
     }
     PrintTags(tags) {
         let tagsButtons = new Array();
@@ -1789,7 +1836,7 @@ class PassView extends View {
         tags.forEach((tag) => {
             const checked = this.TagsToRecheck.indexOf(tag) != -1;
             let id = ++tagCounter;
-            tagsButtons.push(`${ViewHelpers.checkbox('tag' + id, tag, checked, 'btn-check', `data-tagfilter="${tag}"`)}
+            tagsButtons.push(`${ViewHelpers.checkbox('tag' + id, tag, checked, 'btn-check', { 'data-tagfilter': tag })}
                 ${ViewHelpers.label('tag' + id, tag, 'my-1 btn btn-primary btn-sm')}`);
         });
         return `TAGS: ${tagsButtons.join(' ')}`;
@@ -1797,7 +1844,7 @@ class PassView extends View {
     PrintEntriesName(entriesName) {
         let out = '';
         let counter = 0;
-        entriesName.forEach((val) => out += `<li class="my-3">${ViewHelpers.button('Entry' + (counter++), val, this.ClassFormBtnBla, `data-name="${ViewHelpers.cleanVal(val)}"`)}</li>`);
+        entriesName.forEach((val) => out += `<li class="my-3">${ViewHelpers.button('Entry' + (counter++), val, this.ClassFormBtnBla, { 'data-name': val })}</li>`);
         return out;
     }
     onFocus(e) {
@@ -1852,7 +1899,7 @@ class PassView extends View {
         }
     }
     handleEdit() {
-        const entry = State.EntriesManage.GetEntry(this.getInner(this.IdNameTitle));
+        const entry = State.EntriesManage.GetEntry(this.getText(this.IdNameTitle));
         if (entry !== false) {
             this.setApp(`<p>${ViewHelpers.button(this.IdGoToView, 'Cancel', this.ClassFormBtnSec)}
             ${ViewHelpers.button(this.IdDeleteEntry, 'Delete entry', this.ClassFormBtnSec)}</p>
@@ -1869,7 +1916,7 @@ class PassView extends View {
     handleDelete() {
         const entryName = this.getVal(this.IdNameOld);
         this.setApp(`
-        <h2>Delete entry &quot;<span id="${this.IdNameTitle}">${entryName}</span>&quot;</h2>
+        <h2>Delete entry &quot;<span id="${this.IdNameTitle}">${ViewHelpers.escapeHtmlText(entryName)}</span>&quot;</h2>
         <p>Are you sure to proceed?</p>
         <p>${ViewHelpers.submit(this.IdConfirmDeleteEntry, 'Confirm delete', this.ClassFormBtn)}
         ${ViewHelpers.button(this.IdEdit, 'Cancel', this.ClassFormBtnSec)}</p>
@@ -1879,7 +1926,7 @@ class PassView extends View {
         const entry = State.EntriesManage.GetEntry(EntryName);
         if (entry !== false)
             this.setApp(`<p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)} ${ViewHelpers.button(this.IdEdit, 'Edit entry', this.ClassFormBtn)}</p>
-            <h2 id="${this.IdNameTitle}">${entry.Name}</h2>
+            <h2 id="${this.IdNameTitle}">${ViewHelpers.escapeHtmlText(entry.Name)}</h2>
             ${this.entryMask(entry)}
             `, () => this.clickEl(this.IdGoToInit));
         else
@@ -1919,10 +1966,10 @@ class PassView extends View {
     }
     deleteEntry() {
         return __awaiter(this, void 0, void 0, function* () {
-            const Name = this.getInner(this.IdNameTitle);
+            const Name = this.getText(this.IdNameTitle);
             if (State.EntriesManage.DeleteEntry(Name)) {
                 this.LoaderShow();
-                const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.K, true);
+                const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.Password);
                 this.LoaderHide();
                 if (setresult) {
                     alert('Entry "' + Name + '" successfully removed');
@@ -1958,7 +2005,7 @@ class PassView extends View {
                     if ((checkName == 'Changed' && State.EntriesManage.UpdateEntryName(NameOld, Name)) || checkName == 'OK') {
                         if (State.EntriesManage.UpdateEntry(this.composeEntry())) {
                             this.LoaderShow();
-                            const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.K, true);
+                            const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.Password);
                             this.LoaderHide();
                             if (setresult) {
                                 this.viewEntry(Name);
@@ -1989,7 +2036,7 @@ class PassView extends View {
                 if (State.EntriesManage.GetEntry(Name) === false) {
                     if (State.EntriesManage.AddEntry(this.composeEntry())) {
                         this.LoaderShow();
-                        const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.K, true);
+                        const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.Password);
                         this.LoaderHide();
                         if (setresult) {
                             this.viewEntry(Name);
@@ -2030,7 +2077,7 @@ class PassView extends View {
         else
             out += ViewHelpers.hiddeninput(this.IdNameOld, entry.Name);
         if (readonly && entry.Date !== undefined)
-            out += `<p class="fst-italic">Last edit: <strong>${entry.Date}</strong></p>`;
+            out += `<p class="fst-italic">Last edit: <strong>${ViewHelpers.escapeHtmlText(String(entry.Date))}</strong></p>`;
         if (!readonly)
             out += this.attrInput(this.IdName, 'Name * (mandatory)', 'Put here the entry name', entry.Name === undefined ? '' : entry.Name);
         if (!readonly || entry.Tags !== undefined)
@@ -2041,7 +2088,7 @@ class PassView extends View {
                 let tagsButtons = new Array();
                 let tagCounter = 0;
                 tags.forEach((tag) => {
-                    tagsButtons.push(ViewHelpers.button('tag' + (++tagCounter), tag, this.ClassFormBtn + ' my-1', `data-tag="${tag}"`));
+                    tagsButtons.push(ViewHelpers.button('tag' + (++tagCounter), tag, this.ClassFormBtn + ' my-1', { 'data-tag': tag }));
                 });
                 out += `<div><span id="${this.IdSpanSelExistingTags}">${ViewHelpers.button(this.IdSelExistingTags, 'Select existing tags', 'my-1 d-none ' + this.ClassFormBtnSec)}</span>
                 <span id="${this.IdExistingTags}" class="d-none">${tagsButtons.join(' ')}
@@ -2079,14 +2126,14 @@ class PassView extends View {
         <div class="row mb-4" id="${this.IdOtherP + counter}">
             <div class="col-9">
                 <p class="row my-1">${readonly ? this.PrintViewOrCopyBar(this.IdOtherValue + counter, entryKey) : ''}
-                ${readonly ? `<strong>${entryKey}</strong>` : ViewHelpers.textinput(this.IdOtherKey + counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
+                ${readonly ? `<strong>${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey + counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
                 </p>
                 <p class="row my-1">${ViewHelpers.hiddeninput(this.IdOtherValue + counter + this.valExt, entryVal)}
                 ${ViewHelpers.textinput(this.IdOtherValue + counter, this.hideVal, readonly ? '' : 'Put here a custom value', this.ClassFormCtrl + ' ', readonly, true)}
                 </p>
             </div>
             <div class="col-3 align-self-center">
-                ${readonly ? '' : ViewHelpers.button(this.IdOtherDelete + counter, '&nbsp;X&nbsp;', this.ClassFormBtn, `data-counter="${counter}"`)}
+                ${readonly ? '' : ViewHelpers.button(this.IdOtherDelete + counter, ' X ', this.ClassFormBtn, { 'data-counter': counter })}
             </div>
         </div></div>`;
     }
@@ -2229,10 +2276,10 @@ class RestoreView extends View {
                     const res = yield Config.selectKeyPassUri();
                     this.showEl(this.IdFileUriP);
                     if (res !== false) {
-                        this.setInner(this.IdFileUri, res);
+                        this.setText(this.IdFileUri, res);
                     }
                     else {
-                        this.setInner(this.IdFileUri, this.DefaultNoFile);
+                        this.setText(this.IdFileUri, this.DefaultNoFile);
                     }
                     break;
                 case 'maintainSequence':
@@ -2255,7 +2302,7 @@ class RestoreView extends View {
     }
     confirmRestoreWallet() {
         return __awaiter(this, void 0, void 0, function* () {
-            const newFile = this.isChecked(this.IdChooseFile) ? this.getInner(this.IdFileUri) : undefined;
+            const newFile = this.isChecked(this.IdChooseFile) ? this.getText(this.IdFileUri) : undefined;
             const newSequence = this.isChecked(this.IdInsertSequence) ? this._sequence : undefined;
             const ok = yield this._ca.setSequenceAndKeyPassUri(newSequence, newFile);
             if (ok) {
@@ -2284,7 +2331,7 @@ class RestoreView extends View {
                 break;
             case 'confirm':
                 if (this._sequence.length == 26) {
-                    this.setInner(this.IdSequence, this.getInner(this.IdSequenceComposer));
+                    this.setMarkup(this.IdSequence, this.getText(this.IdSequenceComposer));
                     this.showEl(this.IdRestoreWallet);
                     this.hideEl(this.IdSelectSequence);
                 }
@@ -2301,10 +2348,10 @@ class RestoreView extends View {
         this.displayConfirm();
     }
     printSequence() {
-        this.setInner(this.IdSequenceComposer, this._sequence.join(', '));
+        this.setMarkup(this.IdSequenceComposer, this._sequence.join(', '));
     }
-    handleKO(step = 'KOStart') {
-        return __awaiter(this, void 0, void 0, function* () {
+    handleKO() {
+        return __awaiter(this, arguments, void 0, function* (step = 'KOStart') {
             switch (step) {
                 case 'ProceedInitialization':
                     const pwd1 = this.getVal(this.IdPassword1, true);
@@ -2416,10 +2463,10 @@ class RestoreView extends View {
         if ((!this.isChecked(this.IdMaintainFile) || !this.isChecked(this.IdMaintainSequence))
             &&
                 (this.isChecked(this.IdMaintainFile) ||
-                    (this.isChecked(this.IdChooseFile) && this.getInner(this.IdFileUri) != this.DefaultNoFile))
+                    (this.isChecked(this.IdChooseFile) && this.getText(this.IdFileUri) != this.DefaultNoFile))
             &&
                 (this.isChecked(this.IdMaintainSequence) ||
-                    (this.isChecked(this.IdInsertSequence) && this.getInner(this.IdSequence) != this.DefaultNoSequence)))
+                    (this.isChecked(this.IdInsertSequence) && this.getText(this.IdSequence) != this.DefaultNoSequence)))
             this.showEl(this.IdConfirm);
         else
             this.hideEl(this.IdConfirm);

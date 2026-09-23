@@ -63,7 +63,7 @@ class MainView extends View {
                             if (passDescr == '')
                                 out += `<p class="alert alert-warning">Your password wallet has no description</p>`;
                             else
-                                out += `<p class="text-center font-italic">${passDescr}</p>`;
+                                out += `<p class="text-center font-italic">${ViewHelpers.escapeHtmlText(passDescr)}</p>`;
                             out += `
                             <div class="d-grid gap-2 col-8 mx-auto">
                             ${ViewHelpers.button(this.IdChangeDescr,passDescr==''?'Add a description':'Change description',this.ClassMenuBtn)}
@@ -86,7 +86,7 @@ class MainView extends View {
                     
                 }
                 catch (e) {
-                    alert(e);
+                    alert('Unable to access the encrypted wallet. Check its file and secure storage.');
                 }
                 
             break;
