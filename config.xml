@@ -7,11 +7,13 @@
     </author>
     <content src="index.html" />
     <hook type="after_prepare" src="scripts/electron-after-prepare.js" />
+    <hook type="after_prepare" src="scripts/android-after-prepare.js" />
     <icon src="www/img/cp-512.png" width="512" height="512" density="mdpi" />
     <platform name="electron">
         <preference name="ElectronSettingsFilePath" value="src/settings/electron.json" />
     </platform>
     <platform name="android">
+        <preference name="AndroidEdgeToEdge" value="false" />
         <preference name="android-minSdkVersion" value="22" />
         <preference name="android-targetSdkVersion" value="36" />
         <preference name="android-compileSdkVersion" value="36" />
