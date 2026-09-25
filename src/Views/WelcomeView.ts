@@ -35,7 +35,7 @@ class WelcomeView extends View implements ViewModel {
     public firstTime() {
         
         this.setApp(`
-        <p>Welcome to CryptPassApp</p>
+        <p>Welcome to CryptPass</p>
         ${ViewHelpers.Instructions}
         <p><input type="checkbox" id="${this.IdDontShowAnymore}" /> <label for="${this.IdDontShowAnymore}">Don't show this message anymore</label></p>
         <p>${ViewHelpers.button(this.IdGoToMain,'LET\'S START',this.ClassFormBtn)}</p>

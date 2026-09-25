@@ -39,9 +39,9 @@ class State {
         this.__EntriesManage_ = em;
     }
 
-    public static logout () {
+    public static logout (preserveDeviceUnlock: boolean = false) {
         void AutoLock.clearClipboardIfUnchanged();
-        AutoLock.stop();
+        AutoLock.stop(!preserveDeviceUnlock);
         this.__CryptPass_ = null;
         this.__EntriesManage_ = null;
         this.__K_ = '';
@@ -61,9 +61,11 @@ document.addEventListener('deviceready', () => {
 
 
 class AutoLock {
-    private static readonly inactivityMs = 5 * 60 * 1000;
     private static readonly clipboardClearMs = 60 * 1000;
     private static inactivityTimer: number | undefined;
+    private static lastActivity = 0;
+    private static deviceUnlockPassword: string | undefined;
+    private static locking = false;
     private static clipboardTimer: number | undefined;
     private static copiedSecret: string | null = null;
     private static listening = false;
@@ -74,7 +76,8 @@ class AutoLock {
             this.listening = true;
             ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, this.reset, { passive: true }));
             document.addEventListener('visibilitychange', this.onVisibilityChange);
-            document.addEventListener('pause', this.lock);
+            document.addEventListener('pause', this.checkInactivity);
+            document.addEventListener('resume', this.checkInactivity);
             window.addEventListener('blur', this.onWindowBlur);
             this.removeElectronListener = window.cryptPassDesktop?.onLockRequested?.(this.lock);
         }
@@ -82,17 +85,31 @@ class AutoLock {
     }
 
     private static reset = (): void => {
-        if (this.inactivityTimer !== undefined) window.clearTimeout(this.inactivityTimer);
-        if (State.Password !== '') this.inactivityTimer = window.setTimeout(this.lock, this.inactivityMs);
+        this.lastActivity = Date.now();
+        this.scheduleLock(LocalStorage.AutoLockTimeoutSeconds() * 1000);
     };
 
-    private static onVisibilityChange = (): void => { if (document.visibilityState === 'hidden') this.lock(); };
-    private static onWindowBlur = (): void => { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden') this.lock(); };
+    private static scheduleLock(delay: number): void {
+        if (this.inactivityTimer !== undefined) window.clearTimeout(this.inactivityTimer);
+        if (State.Password !== '') this.inactivityTimer = window.setTimeout(this.checkInactivity, delay);
+    }
 
-    public static stop(): void {
+    private static checkInactivity = (): void => {
+        if (State.Password === '') return;
+        const remaining = LocalStorage.AutoLockTimeoutSeconds() * 1000 - (Date.now() - this.lastActivity);
+        if (remaining <= 0) this.lock();
+        else this.scheduleLock(remaining);
+    };
+
+    private static onVisibilityChange = (): void => { if (document.visibilityState === 'visible') this.checkInactivity(); };
+    private static onWindowBlur = (): void => { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden') this.checkInactivity(); };
+
+    public static stop(clearDeviceUnlock: boolean = true): void {
         if (this.inactivityTimer !== undefined) window.clearTimeout(this.inactivityTimer);
         if (this.clipboardTimer !== undefined) window.clearTimeout(this.clipboardTimer);
         this.inactivityTimer = undefined;
+        this.lastActivity = 0;
+        if (clearDeviceUnlock) this.deviceUnlockPassword = undefined;
         this.clipboardTimer = undefined;
         this.copiedSecret = null;
         this.removeElectronListener?.();
@@ -100,7 +117,8 @@ class AutoLock {
         this.listening = false;
         ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.removeEventListener(type, this.reset));
         document.removeEventListener('visibilitychange', this.onVisibilityChange);
-        document.removeEventListener('pause', this.lock);
+        document.removeEventListener('pause', this.checkInactivity);
+        document.removeEventListener('resume', this.checkInactivity);
         window.removeEventListener('blur', this.onWindowBlur);
     }
 
@@ -127,8 +145,65 @@ class AutoLock {
     }
 
     private static lock = (): void => {
-        if (State.Password === '') return;
-        State.logout();
-        ScenarioController.changeScenario(new MainView());
+        if (State.Password === '' || this.locking) return;
+        this.locking = true;
+        void this.lockSession();
     };
+
+    private static async lockSession(): Promise<void> {
+        let canUnlockWithDevice = false;
+        if (cordova.platformId === 'android') {
+            try { canUnlockWithDevice = await DeviceAuth.hasScreenLock(); } catch (_) { /* Master password remains available. */ }
+        }
+        this.deviceUnlockPassword = canUnlockWithDevice ? State.Password : undefined;
+        State.logout(canUnlockWithDevice);
+        ScenarioController.changeScenario(new MainView());
+        this.locking = false;
+    }
+
+    public static hasDeviceUnlock(): boolean { return this.deviceUnlockPassword !== undefined; }
+
+    public static async unlockWithDevice(): Promise<boolean> {
+        const password = this.deviceUnlockPassword;
+        if (!password) return false;
+        let hasScreenLock = false;
+        try { hasScreenLock = await DeviceAuth.hasScreenLock(); } catch (_) { /* Fall back to the master password if system auth is unavailable. */ }
+        if (!hasScreenLock) {
+            this.deviceUnlockPassword = undefined;
+            return false;
+        }
+        let authenticated = false;
+        try { authenticated = await DeviceAuth.confirm(); } catch (_) { /* Leave the credential button available for another attempt. */ }
+        if (!authenticated) return false;
+        this.deviceUnlockPassword = undefined;
+        if (!await new AppActions().Unlock(password)) return false;
+        ScenarioController.changeScenario(new PassView());
+        return true;
+    }
+}
+
+class DeviceAuth {
+    private static call(action: 'hasScreenLock' | 'confirm'): Promise<boolean> {
+        return new Promise((resolve, reject) => (cordova.exec as any)(
+            (result: string) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', action, []
+        ));
+    }
+    public static hasScreenLock(): Promise<boolean> { return this.call('hasScreenLock'); }
+    public static confirm(): Promise<boolean> {
+        return new Promise((resolve, reject) => (cordova.exec as any)(
+            (result: string) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', 'confirm', [
+                Localization.text('main.deviceAuthTitle'), Localization.text('main.deviceAuthDescription')
+            ]
+        ));
+    }
+    public static showKeyboard(): void {
+        if (cordova.platformId !== 'android') return;
+        window.setTimeout(() => (cordova.exec as any)(
+            () => undefined,
+            (error: unknown) => console.error('Could not open the Android keyboard', error),
+            'CryptPassDeviceAuth',
+            'showKeyboard',
+            []
+        ), 120);
+    }
 }

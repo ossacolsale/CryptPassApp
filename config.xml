@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <widget id="com.cryptpass.app" version="1.2.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-    <name>CryptPassApp</name>
+    <name>CryptPass</name>
     <description>Password wallet manager</description>
     <author email="email@giancarlomangiagli.it" href="https://www.giancarlomangiagli.it">
         Giancarlo Mangiagli
@@ -13,7 +13,8 @@
         <preference name="ElectronSettingsFilePath" value="src/settings/electron.json" />
     </platform>
     <platform name="android">
-        <preference name="AndroidEdgeToEdge" value="false" />
+        <preference name="AndroidEdgeToEdge" value="true" />
+        <preference name="AndroidWindowSplashScreenAnimatedIcon" value="www/img/cp-512.png" />
         <preference name="android-minSdkVersion" value="22" />
         <preference name="android-targetSdkVersion" value="36" />
         <preference name="android-compileSdkVersion" value="36" />

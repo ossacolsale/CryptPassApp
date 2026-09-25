@@ -38,9 +38,9 @@ class State {
     static set EntriesManage(em) {
         this.__EntriesManage_ = em;
     }
-    static logout() {
+    static logout(preserveDeviceUnlock = false) {
         void AutoLock.clearClipboardIfUnchanged();
-        AutoLock.stop();
+        AutoLock.stop(!preserveDeviceUnlock);
         this.__CryptPass_ = null;
         this.__EntriesManage_ = null;
         this.__K_ = '';
@@ -65,19 +65,29 @@ class AutoLock {
             this.listening = true;
             ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, this.reset, { passive: true }));
             document.addEventListener('visibilitychange', this.onVisibilityChange);
-            document.addEventListener('pause', this.lock);
+            document.addEventListener('pause', this.checkInactivity);
+            document.addEventListener('resume', this.checkInactivity);
             window.addEventListener('blur', this.onWindowBlur);
             this.removeElectronListener = (_c = (_b = window.cryptPassDesktop) === null || _b === void 0 ? void 0 : _b.onLockRequested) === null || _c === void 0 ? void 0 : _c.call(_b, this.lock);
         }
         this.reset();
     }
-    static stop() {
+    static scheduleLock(delay) {
+        if (this.inactivityTimer !== undefined)
+            window.clearTimeout(this.inactivityTimer);
+        if (State.Password !== '')
+            this.inactivityTimer = window.setTimeout(this.checkInactivity, delay);
+    }
+    static stop(clearDeviceUnlock = true) {
         var _b;
         if (this.inactivityTimer !== undefined)
             window.clearTimeout(this.inactivityTimer);
         if (this.clipboardTimer !== undefined)
             window.clearTimeout(this.clipboardTimer);
         this.inactivityTimer = undefined;
+        this.lastActivity = 0;
+        if (clearDeviceUnlock)
+            this.deviceUnlockPassword = undefined;
         this.clipboardTimer = undefined;
         this.copiedSecret = null;
         (_b = this.removeElectronListener) === null || _b === void 0 ? void 0 : _b.call(this);
@@ -85,7 +95,8 @@ class AutoLock {
         this.listening = false;
         ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.removeEventListener(type, this.reset));
         document.removeEventListener('visibilitychange', this.onVisibilityChange);
-        document.removeEventListener('pause', this.lock);
+        document.removeEventListener('pause', this.checkInactivity);
+        document.removeEventListener('resume', this.checkInactivity);
         window.removeEventListener('blur', this.onWindowBlur);
     }
     static scheduleClipboardCleanup(secret) {
@@ -95,8 +106,8 @@ class AutoLock {
         this.clipboardTimer = window.setTimeout(() => { void this.clearClipboardIfUnchanged(); }, this.clipboardClearMs);
     }
     static clearClipboardIfUnchanged() {
+        var _b, _c;
         return __awaiter(this, void 0, void 0, function* () {
-            var _b, _c;
             const secret = this.copiedSecret;
             this.copiedSecret = null;
             if (this.clipboardTimer !== undefined)
@@ -118,28 +129,91 @@ class AutoLock {
             catch (_) { }
         });
     }
+    static lockSession() {
+        return __awaiter(this, void 0, void 0, function* () {
+            let canUnlockWithDevice = false;
+            if (cordova.platformId === 'android') {
+                try {
+                    canUnlockWithDevice = yield DeviceAuth.hasScreenLock();
+                }
+                catch (_) { }
+            }
+            this.deviceUnlockPassword = canUnlockWithDevice ? State.Password : undefined;
+            State.logout(canUnlockWithDevice);
+            ScenarioController.changeScenario(new MainView());
+            this.locking = false;
+        });
+    }
+    static hasDeviceUnlock() { return this.deviceUnlockPassword !== undefined; }
+    static unlockWithDevice() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const password = this.deviceUnlockPassword;
+            if (!password)
+                return false;
+            let hasScreenLock = false;
+            try {
+                hasScreenLock = yield DeviceAuth.hasScreenLock();
+            }
+            catch (_) { }
+            if (!hasScreenLock) {
+                this.deviceUnlockPassword = undefined;
+                return false;
+            }
+            let authenticated = false;
+            try {
+                authenticated = yield DeviceAuth.confirm();
+            }
+            catch (_) { }
+            if (!authenticated)
+                return false;
+            this.deviceUnlockPassword = undefined;
+            if (!(yield new AppActions().Unlock(password)))
+                return false;
+            ScenarioController.changeScenario(new PassView());
+            return true;
+        });
+    }
 }
 _a = AutoLock;
-AutoLock.inactivityMs = 5 * 60 * 1000;
 AutoLock.clipboardClearMs = 60 * 1000;
+AutoLock.lastActivity = 0;
+AutoLock.locking = false;
 AutoLock.copiedSecret = null;
 AutoLock.listening = false;
 AutoLock.reset = () => {
-    if (_a.inactivityTimer !== undefined)
-        window.clearTimeout(_a.inactivityTimer);
-    if (State.Password !== '')
-        _a.inactivityTimer = window.setTimeout(_a.lock, _a.inactivityMs);
+    _a.lastActivity = Date.now();
+    _a.scheduleLock(LocalStorage.AutoLockTimeoutSeconds() * 1000);
 };
-AutoLock.onVisibilityChange = () => { if (document.visibilityState === 'hidden')
-    _a.lock(); };
-AutoLock.onWindowBlur = () => { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden')
-    _a.lock(); };
-AutoLock.lock = () => {
+AutoLock.checkInactivity = () => {
     if (State.Password === '')
         return;
-    State.logout();
-    ScenarioController.changeScenario(new MainView());
+    const remaining = LocalStorage.AutoLockTimeoutSeconds() * 1000 - (Date.now() - _a.lastActivity);
+    if (remaining <= 0)
+        _a.lock();
+    else
+        _a.scheduleLock(remaining);
 };
+AutoLock.onVisibilityChange = () => { if (document.visibilityState === 'visible')
+    _a.checkInactivity(); };
+AutoLock.onWindowBlur = () => { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden')
+    _a.checkInactivity(); };
+AutoLock.lock = () => {
+    if (State.Password === '' || _a.locking)
+        return;
+    _a.locking = true;
+    void _a.lockSession();
+};
+class DeviceAuth {
+    static call(action) {
+        return new Promise((resolve, reject) => cordova.exec((result) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', action, []));
+    }
+    static hasScreenLock() { return this.call('hasScreenLock'); }
+    static confirm() {
+        return new Promise((resolve, reject) => cordova.exec((result) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', 'confirm', [
+            Localization.text('main.deviceAuthTitle'), Localization.text('main.deviceAuthDescription')
+        ]));
+    }
+}
 class AppActions {
     Unlock(pwd) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -190,8 +264,8 @@ class Config {
         });
     }
     static getPreferences() {
+        var _b;
         return __awaiter(this, void 0, void 0, function* () {
-            var _b;
             const config = yield this.getConfig();
             if (config !== false) {
                 return (_b = config.Preferences) !== null && _b !== void 0 ? _b : this.defaultPreferences;
@@ -287,8 +361,8 @@ class Config {
                 return false;
         });
     }
-    static newKeyPass() {
-        return __awaiter(this, arguments, void 0, function* (kp = {}) {
+    static newKeyPass(kp = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
             const uri = yield FS.NewFile(this.defaultKeyPassFilename, JSON.stringify(kp));
             if (uri !== false) {
                 return this.setKeyPassUri(uri);
@@ -297,14 +371,12 @@ class Config {
                 return false;
         });
     }
-    static selectKeyPassUri() {
+    static selectKeyPassFiles() {
         return __awaiter(this, void 0, void 0, function* () {
-            const file = yield FS.SelectAndReadFile();
-            if (file !== false) {
-                return file[0].uri;
-            }
-            else
+            const files = yield FS.SelectAndReadFile();
+            if (files === false)
                 return false;
+            return files.map(file => ({ uri: file.uri, name: file.name }));
         });
     }
     static setKeyPassUri(uri) {
@@ -780,20 +852,25 @@ class View {
                     doSomethingAfterHiding(res);
             }, this.LoaderShowMs);
     }
-    LoaderShowAsync(doSomethingBeforeHiding_1, doSomethingAfterHiding_1) {
-        return __awaiter(this, arguments, void 0, function* (doSomethingBeforeHiding, doSomethingAfterHiding, hideAfter = true) {
+    LoaderShowAsync(doSomethingBeforeHiding, doSomethingAfterHiding, hideAfter = true) {
+        return __awaiter(this, void 0, void 0, function* () {
             this.LoaderShowCommands();
-            if (doSomethingBeforeHiding !== undefined)
-                setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                    let res;
-                    if (doSomethingBeforeHiding !== undefined) {
-                        res = yield doSomethingBeforeHiding();
-                    }
-                    if (hideAfter)
-                        this.LoaderHide();
+            try {
+                if (doSomethingBeforeHiding !== undefined) {
+                    yield new Promise(resolve => window.setTimeout(resolve, this.LoaderShowMs));
+                    const res = yield doSomethingBeforeHiding();
                     if (doSomethingAfterHiding !== undefined)
                         yield doSomethingAfterHiding(res);
-                }), this.LoaderShowMs);
+                }
+            }
+            catch (error) {
+                alert('Operation failed. Check the selected wallet and storage permission, then try again.');
+                CommonHelpers.StandardError(error);
+            }
+            finally {
+                if (hideAfter)
+                    this.LoaderHide();
+            }
         });
     }
     LoaderHide() {
@@ -890,14 +967,59 @@ class ElectronFS {
     }
 }
 class AndroidFS {
+    static treeGrantKey(uri) { return 'cryptPassDocumentTree:' + uri; }
+    static saveTreeGrant(uri, treeUri, name) {
+        window.localStorage.setItem(this.treeGrantKey(uri), JSON.stringify({ treeUri: treeUri, name: name }));
+    }
+    static selectVaultFolder() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => cordova.exec((result) => {
+                try {
+                    resolve(typeof result === 'string' ? JSON.parse(result) : result);
+                }
+                catch (error) {
+                    reject(error);
+                }
+            }, reject, 'Chooser', 'selectVaultFolder', []));
+        });
+    }
+    static resolveUri(uri) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const raw = window.localStorage.getItem(this.treeGrantKey(uri));
+            if (!raw)
+                return uri;
+            try {
+                const grant = JSON.parse(raw);
+                return yield new Promise((resolve, reject) => cordova.exec((liveUri) => resolve(liveUri), reject, 'Chooser', 'resolveFileInTree', [grant.treeUri, grant.name]));
+            }
+            catch (_) {
+                return false;
+            }
+        });
+    }
     static NewFile(fileName, fileContent) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const blob = new Blob([fileContent], { type: defaultMimeType });
                 const uri = yield cordova.plugins.saveDialog.getFileUri(blob, fileName);
                 yield cordova.plugins.saveDialog.saveFileByUri(blob, uri);
-                window.localStorage.setItem(uri, fileContent);
-                return uri;
+                let stableUri = uri;
+                try {
+                    const selectedFolder = yield this.selectVaultFolder();
+                    const file = selectedFolder.files.find(candidate => candidate.name === fileName);
+                    if (file) {
+                        stableUri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(file.relativePath);
+                        this.saveTreeGrant(stableUri, selectedFolder.treeUri, file.relativePath);
+                    }
+                    else {
+                        alert(Localization.text('file.folderGrantSkipped'));
+                    }
+                }
+                catch (_) {
+                    alert(Localization.text('file.folderGrantSkipped'));
+                }
+                window.localStorage.setItem(stableUri, fileContent);
+                return stableUri;
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -908,13 +1030,16 @@ class AndroidFS {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const blob = new Blob([fileContent], { type: defaultMimeType });
+                const liveUri = yield this.resolveUri(uri);
+                if (liveUri === false)
+                    return false;
                 const uri_content = yield this.ReadFile(uri);
                 const uri_bk_content = window.localStorage.getItem(uri);
                 if (uri_content !== false && uri_content !== uri_bk_content)
                     window.localStorage.setItem(uri, uri_content);
                 if (uri_content === false && uri_bk_content === null)
                     window.localStorage.setItem(uri, fileContent);
-                yield cordova.plugins.saveDialog.saveFileByUri(blob, uri);
+                yield cordova.plugins.saveDialog.saveFileByUri(blob, liveUri);
                 return true;
             }
             catch (e) {
@@ -925,7 +1050,10 @@ class AndroidFS {
     static ReadFile(uri) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                return yield chooser.readFile(uri);
+                const liveUri = yield this.resolveUri(uri);
+                if (liveUri === false)
+                    return false;
+                return yield CommonHelpers.withTimeout(chooser.readFile(liveUri), 'Vault file read');
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -935,12 +1063,16 @@ class AndroidFS {
     static SelectAndReadFile() {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const chooserResult = yield chooser.getFiles(defaultMimeType, () => null, () => null);
-                if (chooserResult.length > 0) {
-                    return chooserResult;
-                }
-                else
+                const selectedFolder = yield this.selectVaultFolder();
+                if (selectedFolder.files.length === 0) {
+                    alert(Localization.text('file.noVaultFilesInFolder'));
                     return false;
+                }
+                return selectedFolder.files.map(file => {
+                    const uri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(file.relativePath);
+                    this.saveTreeGrant(uri, selectedFolder.treeUri, file.relativePath);
+                    return { uri: uri, name: file.name, mediaType: defaultMimeType, content: '' };
+                });
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -1031,21 +1163,36 @@ class LocalStorage {
         const newVal = Date.now() + this.passwordexpirationdays * 86400000;
         this._Set('PasswordExpirationTime', newVal.toString());
     }
+    static AutoLockTimeoutSeconds() {
+        const value = parseInt(this._Get('AutoLockTimeoutSeconds') || '', 10);
+        return [10, 30, 60, 300].indexOf(value) !== -1 ? value : 10;
+    }
+    static AutoLockTimeoutSecondsSet(value) {
+        if ([10, 30, 60, 300].indexOf(value) !== -1)
+            this._Set('AutoLockTimeoutSeconds', value.toString());
+    }
 }
 LocalStorage.initialized = '1';
 LocalStorage.firsttime = '0';
 LocalStorage.passwordexpirationdays = 30;
 let androidSecureStorage;
+let androidSecureStorageReady;
 function getAndroidSecureStorage() {
-    if (!androidSecureStorage) {
-        androidSecureStorage = new cordova.plugins.SecureStorage(function () { }, function () { }, 'cryptpass_store');
+    if (!androidSecureStorageReady) {
+        androidSecureStorageReady = new Promise((resolve, reject) => {
+            androidSecureStorage = new cordova.plugins.SecureStorage(() => resolve(androidSecureStorage), reject, 'cryptpass_store');
+        }).catch(error => {
+            androidSecureStorage = undefined;
+            androidSecureStorageReady = undefined;
+            throw error;
+        });
     }
-    return androidSecureStorage;
+    return androidSecureStorageReady;
 }
 class SecureStorage {
     static getVal(key) {
+        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron': {
@@ -1062,18 +1209,17 @@ class SecureStorage {
                         return legacy;
                     }
                     case 'android':
-                        return new Promise((resolve, reject) => {
-                            getAndroidSecureStorage().get(function (value) {
-                                resolve(value);
-                            }, function (error) {
-                                if (error && error.message && error.message.indexOf('not found') !== -1) {
+                        const storage = yield CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
+                        return CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                            storage.get(function (value) { resolve(value); }, function (error) {
+                                if (error && error.message && error.message.toLowerCase().indexOf('not found') !== -1) {
                                     resolve(false);
                                 }
                                 else {
                                     reject(error);
                                 }
                             }, key);
-                        });
+                        }), 'Android secure storage');
                     default:
                         return false;
                 }
@@ -1084,20 +1230,17 @@ class SecureStorage {
         });
     }
     static setVal(key, value) {
+        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron':
                         return (_b = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureSet(key, value))) !== null && _b !== void 0 ? _b : false;
                     case 'android':
-                        return new Promise((resolve, reject) => {
-                            getAndroidSecureStorage().set(function (key) {
-                                resolve(key);
-                            }, function (error) {
-                                reject(error);
-                            }, key, value);
-                        });
+                        const storage = yield CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
+                        return CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                            storage.set(function (storedKey) { resolve(storedKey); }, reject, key, value);
+                        }), 'Android secure storage');
                     default:
                         return false;
                 }
@@ -1108,8 +1251,8 @@ class SecureStorage {
         });
     }
     static delVal(key) {
+        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron':
@@ -1132,6 +1275,12 @@ class SecureStorage {
 class CommonHelpers {
     static StandardError(e) {
         return false;
+    }
+    static withTimeout(promise, operation, timeoutMs = 15000) {
+        return new Promise((resolve, reject) => {
+            const timer = window.setTimeout(() => reject(new Error(operation + ' timed out')), timeoutMs);
+            promise.then(value => { window.clearTimeout(timer); resolve(value); }, error => { window.clearTimeout(timer); reject(error); });
+        });
     }
     static CustomError(msg) {
         return false;
@@ -1390,14 +1539,14 @@ class DescrView extends View {
     Init() {
         return __awaiter(this, void 0, void 0, function* () {
             const passDescr = State.CryptPass.getPassDescription().trim();
-            this.setApp(`<h2>${passDescr === '' ? 'Add description' : 'Edit description'}</h2>
+            this.setApp(`<h2>${Localization.text(passDescr === '' ? 'description.add' : 'description.edit')}</h2>
         <form id="${this.IdDescriptionForm}">
-        <p>${ViewHelpers.textinput(this.IdDescription, passDescr, 'Put the description here', this.ClassFormCtrl)}</p>
-        <p class="alert alert-warning">Warning! This description <strong>won't be encrypted</strong>.
-        So take care not to put any significant or important information in it but keep it as generic as possible.</p>
+        <p>${ViewHelpers.textinput(this.IdDescription, passDescr, Localization.text('description.placeholder'), this.ClassFormCtrl)}</p>
+        <p class="alert alert-warning">${Localization.text('description.warningPrefix')} <strong>${Localization.text('description.warningNotEncrypted')}</strong>.
+        ${Localization.text('description.warningSuffix')}</p>
         <p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}
-        ${ViewHelpers.submit(this.IdSetDescription, 'Confirm new description', this.ClassFormBtn)}
-        ${passDescr === '' ? '' : ViewHelpers.button(this.IdRemoveDescription, 'Remove description', this.ClassFormBtn)}</p>
+        ${ViewHelpers.submit(this.IdSetDescription, Localization.text('description.confirm'), this.ClassFormBtn)}
+        ${passDescr === '' ? '' : ViewHelpers.button(this.IdRemoveDescription, Localization.text('description.remove'), this.ClassFormBtn)}</p>
         </form>
         `, () => this.clickEl(this.IdGoToInit));
         });
@@ -1423,8 +1572,8 @@ class DescrView extends View {
             }
         });
     }
-    handleSet() {
-        return __awaiter(this, arguments, void 0, function* (remove = false) {
+    handleSet(remove = false) {
+        return __awaiter(this, void 0, void 0, function* () {
             const descr = this.getEl(this.IdDescription).value.trim();
             if (descr.length > 0 || remove) {
                 this.LoaderShow();
@@ -1434,12 +1583,12 @@ class DescrView extends View {
                     ScenarioController.changeScenario(new OtherView());
                 }
                 else {
-                    alert('Sorry. We encountered an error setting up the description');
+                    alert(Localization.text('description.error'));
                     this.focusEl(this.IdDescription);
                 }
             }
             else {
-                alert('Error. Empty description.');
+                alert(Localization.text('description.empty'));
                 this.focusEl(this.IdDescription);
             }
         });
@@ -1453,6 +1602,7 @@ class MainView extends View {
         this.IdHandlePwd = 'pwd';
         this.IdUnlockForm = 'UnlockForm';
         this.IdRestoreOptions = 'RestoreOptions';
+        this.IdDeviceUnlock = 'DeviceUnlock';
         this.IdChangeDescr = 'ChangeDescr';
         this.IdManagePwd = 'ManagePwd';
         this.IdOther = 'Other';
@@ -1504,13 +1654,18 @@ class MainView extends View {
                             }
                         }
                         else {
+                            const walletName = yield WalletProfiles.activeName();
+                            const deviceUnlockRequired = AutoLock.hasDeviceUnlock();
                             this.setApp(`<form id="${this.IdUnlockForm}">
+                        <p>${Localization.text('main.walletToUnlock')}: <strong translate="no">${ViewHelpers.escapeHtmlText(walletName === 'My wallet' ? Localization.text('wallet.defaultName') : walletName)}</strong></p>
+                        ${deviceUnlockRequired ? `<p>${ViewHelpers.button(this.IdDeviceUnlock, Localization.text('main.deviceUnlock'), this.ClassFormBtn)}</p>` : `
                         <p>${ViewHelpers.password(this.IdPassword1, 'Type password', this.ClassFormCtrl)}</p>
                         <p>${ViewHelpers.submit(this.IdHandlePwd, 'Unlock', this.ClassFormBtn)}
-                        ${ViewHelpers.button(this.IdRestoreOptions, 'Restore options', this.ClassFormBtnSec)}</p>
+                        ${ViewHelpers.button(this.IdRestoreOptions, 'Restore options', this.ClassFormBtnSec)}</p>`}
                         </form>
                         `);
-                            this.focusEl(this.IdPassword1);
+                            if (!deviceUnlockRequired)
+                                this.focusEl(this.IdPassword1);
                         }
                     }
                     catch (e) {
@@ -1569,6 +1724,10 @@ class MainView extends View {
                         back: () => ScenarioController.changeScenario(new MainView()), desc: '<p>Select a restore option:</p>', status: 'OK'
                     });
                     break;
+                case this.IdDeviceUnlock:
+                    if (!(yield AutoLock.unlockWithDevice()))
+                        this.Init();
+                    break;
                 case this.IdOther:
                     ScenarioController.changeScenario(new OtherView());
                     break;
@@ -1586,7 +1745,7 @@ class MainView extends View {
                 else {
                     const pwdCorrect = yield this._aa.Unlock(pwd);
                     if (pwdCorrect) {
-                        this.Init();
+                        yield this.Init();
                         return true;
                     }
                     else {
@@ -1619,6 +1778,7 @@ class OtherView extends View {
         this.IdChPwdRemind = 'RememberChPwd';
         this.IdSavePreferences = 'SavePreferences';
         this.IdRetryLoad = 'RetryLoad';
+        this.IdLockTimeout = 'LockTimeout';
         this.IdRefreshSequence = 'RefreshSequence';
         this.IdConfirmSequenceRefresh = 'ConfirmSequenceRefresh';
         this.IdPassword1 = 'password1';
@@ -1647,7 +1807,7 @@ class OtherView extends View {
         ${ViewHelpers.button(this.IdWalletProfiles, 'Manage wallets', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdRestore, 'Restore/reset wallet', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions, 'Read instructions', this.ClassMenuBtn)}
-        ${ViewHelpers.button(this.IdChangeDescr, passDescr == '' ? 'Add a description to your wallet' : 'Change description to your wallet', this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdChangeDescr, Localization.text(passDescr === '' ? 'other.changeDescriptionAdd' : 'other.changeDescription'), this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdAbout, 'About author', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu, 'Go back', this.ClassFormBtnSec)}
         <p class="mt-3"><label for="AppLanguage">Language</label>
@@ -1717,7 +1877,7 @@ class OtherView extends View {
     }
     showAbout() {
         this.setApp(`<h2>About author</h2>
-            <p>CryptPassApp is Developed by<p>
+            <p>CryptPass is Developed by<p>
             <p><strong>Giancarlo Mangiagli</strong></p>
             <p>www.giancarlomangiagli.it</p>
             <p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
@@ -1739,10 +1899,18 @@ class OtherView extends View {
                 this.setApp(`<h2>Preferences</h2>
             <form id="${this.IdChPreferencesForm}">
             <p>${ViewHelpers.checkbox(this.IdChPwdRemind, this.RemindValue, this.preferences.ChPwdReminder)} ${ViewHelpers.label(this.IdChPwdRemind, 'Remind me to change password every month')}</p>
+            <label for="${this.IdLockTimeout}">${Localization.text('settings.autoLock')}</label>
+            <select id="${this.IdLockTimeout}" class="form-select mb-3">
+                <option value="10">${Localization.text('settings.10seconds')}</option>
+                <option value="30">${Localization.text('settings.30seconds')}</option>
+                <option value="60">${Localization.text('settings.1minute')}</option>
+                <option value="300">${Localization.text('settings.5minutes')}</option>
+            </select>
             <p>${ViewHelpers.submit(this.IdSavePreferences, 'Save preferences', this.ClassFormBtn)}
             ${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
             </form>
                 `, () => this.clickEl(this.IdGoToInit));
+                this.getEl(this.IdLockTimeout).value = LocalStorage.AutoLockTimeoutSeconds().toString();
             }
             catch (e) {
                 this.setApp(`<h2>Preferences</h2>
@@ -1758,6 +1926,7 @@ class OtherView extends View {
     SavePreferences() {
         return __awaiter(this, void 0, void 0, function* () {
             this.preferences.ChPwdReminder = this.isChecked(this.IdChPwdRemind);
+            LocalStorage.AutoLockTimeoutSecondsSet(parseInt(this.getEl(this.IdLockTimeout).value, 10));
             const saved = yield Config.setPreferences(this.preferences);
             if (saved)
                 this.Init();
@@ -2439,6 +2608,8 @@ class RestoreView extends View {
         this.IdMaintainSequence = 'MaintainSequence';
         this.IdInsertSequence = 'InsertSequence';
         this.IdFileUriP = 'FileUriP';
+        this.IdFolderPrompt = 'VaultFolderPrompt';
+        this.fileCandidates = [];
         this.IdSequenceP = 'SequenceP';
         this.IdSequence = 'Sequence';
         this.IdSelectSequence = 'SelectSequence';
@@ -2454,7 +2625,8 @@ class RestoreView extends View {
         this.DefaultNoSequence = Localization.text('ui.noSequenceSelected');
         this._sequence = [];
         this.Handlers = [
-            { name: 'RestoreViewClick', handler: (e) => this.onClick(e), type: 'click' }
+            { name: 'RestoreViewClick', handler: (e) => this.onClick(e), type: 'click' },
+            { name: 'RestoreViewChange', handler: (e) => this.onChange(e), type: 'change' }
         ];
     }
     Init(options) {
@@ -2472,6 +2644,12 @@ class RestoreView extends View {
                 `, () => this.clickEl(this.IdGoBack));
             this._ca = new ConfigActions(State.Password);
             this._aa = new AppActions();
+        });
+    }
+    onChange(e) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (e.target.id === this.IdFileUri)
+                this.displayConfirm();
         });
     }
     onClick(e) {
@@ -2539,16 +2717,20 @@ class RestoreView extends View {
             switch (action) {
                 case 'maintainFile':
                     this.hideEl(this.IdFileUriP);
+                    this.hideEl(this.IdFolderPrompt);
                     break;
                 case 'chooseFile':
-                    const res = yield Config.selectKeyPassUri();
+                    const files = yield Config.selectKeyPassFiles();
+                    this.showEl(this.IdFolderPrompt);
                     this.showEl(this.IdFileUriP);
-                    if (res !== false) {
-                        this.setText(this.IdFileUri, res);
-                    }
-                    else {
-                        this.setText(this.IdFileUri, this.DefaultNoFile);
-                    }
+                    this.fileCandidates = files === false ? [] : files;
+                    const select = this.getEl(this.IdFileUri);
+                    select.replaceChildren(new Option(this.DefaultNoFile, ''));
+                    this.fileCandidates.forEach(file => {
+                        const option = new Option(file.name, file.uri);
+                        select.add(option);
+                    });
+                    this.displayConfirm();
                     break;
                 case 'maintainSequence':
                     this.hideEl(this.IdSequenceP);
@@ -2570,7 +2752,8 @@ class RestoreView extends View {
     }
     confirmRestoreWallet() {
         return __awaiter(this, void 0, void 0, function* () {
-            const newFile = this.isChecked(this.IdChooseFile) ? this.getText(this.IdFileUri) : undefined;
+            const selectedFile = this.getVal(this.IdFileUri, true);
+            const newFile = this.isChecked(this.IdChooseFile) ? selectedFile : undefined;
             const newSequence = this.isChecked(this.IdInsertSequence) ? this._sequence : undefined;
             const ok = yield this._ca.setSequenceAndKeyPassUri(newSequence, newFile);
             if (ok) {
@@ -2618,8 +2801,8 @@ class RestoreView extends View {
     printSequence() {
         this.setMarkup(this.IdSequenceComposer, this._sequence.join(', '));
     }
-    handleKO() {
-        return __awaiter(this, arguments, void 0, function* (step = 'KOStart') {
+    handleKO(step = 'KOStart') {
+        return __awaiter(this, void 0, void 0, function* () {
             switch (step) {
                 case 'ProceedInitialization':
                     const pwd1 = this.getVal(this.IdPassword1, true);
@@ -2646,7 +2829,7 @@ class RestoreView extends View {
     <p class="h3">${this._ca.getSequence().join(', ')}</p>
 
      <p class="alert alert-danger">${Localization.text('ui.recordSequence')} (<strong>${Localization.text('ui.beforeReset')}</strong>)</p>
-     <p>${ViewHelpers.button(this.IdStartUsingCryptpass, 'Start using CryptPassApp', this.ClassFormBtn)}</p>
+     <p>${ViewHelpers.button(this.IdStartUsingCryptpass, 'Start using CryptPass', this.ClassFormBtn)}</p>
 
     `);
                         }
@@ -2692,7 +2875,8 @@ class RestoreView extends View {
                     <label class="btn btn-outline-primary" for="${this.IdChooseFile}">Choose new file</label>
                 </div>
 
-                <p id="${this.IdFileUriP}"${mustPickFile ? '' : ' class="d-none"'}>New file: <span class="fw-bold text-break" id="${this.IdFileUri}">${this.DefaultNoFile}</span></p>                    
+                <p id="${this.IdFolderPrompt}"${mustPickFile ? '' : ' class="d-none"'}>${Localization.text('file.chooseFolderPrompt')}</p>
+                <p id="${this.IdFileUriP}"${mustPickFile ? '' : ' class="d-none"'}>New file: <select class="form-select" id="${this.IdFileUri}"><option value="">${ViewHelpers.escapeHtmlText(this.DefaultNoFile)}</option></select></p>
 
                 <div class="mt-2 btn-group" role="group"${mustInsertSequence ? ' class="d-none"' : ''}>
                     <span${mustInsertSequence ? ' class="d-none"' : ''}><input type="radio" class="btn-check" name="btnradio1" id="${this.IdMaintainSequence}" autocomplete="off"${mustInsertSequence ? '' : ' checked="checked"'}>
@@ -2729,7 +2913,7 @@ class RestoreView extends View {
         if ((!this.isChecked(this.IdMaintainFile) || !this.isChecked(this.IdMaintainSequence))
             &&
                 (this.isChecked(this.IdMaintainFile) ||
-                    (this.isChecked(this.IdChooseFile) && this.getText(this.IdFileUri) != this.DefaultNoFile))
+                    (this.isChecked(this.IdChooseFile) && this.getVal(this.IdFileUri, true) !== ''))
             &&
                 (this.isChecked(this.IdMaintainSequence) ||
                     (this.isChecked(this.IdInsertSequence) && this.getText(this.IdSequence) != this.DefaultNoSequence)))
@@ -2808,8 +2992,8 @@ class WalletProfilesView extends View {
         });
     }
     onSubmit(event) {
+        var _a;
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
             if (event.target.id !== this.IdWalletManager)
                 return;
             event.preventDefault();
@@ -2924,7 +3108,7 @@ class WelcomeView extends View {
     }
     firstTime() {
         this.setApp(`
-        <p>Welcome to CryptPassApp</p>
+        <p>Welcome to CryptPass</p>
         ${ViewHelpers.Instructions}
         <p><input type="checkbox" id="${this.IdDontShowAnymore}" /> <label for="${this.IdDontShowAnymore}">Don't show this message anymore</label></p>
         <p>${ViewHelpers.button(this.IdGoToMain, 'LET\'S START', this.ClassFormBtn)}</p>

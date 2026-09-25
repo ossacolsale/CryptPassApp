@@ -1,4 +1,4 @@
-type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime';
+type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime' | 'AutoLockTimeoutSeconds';
 
 class LocalStorage {
 
@@ -43,5 +43,13 @@ class LocalStorage {
         const newVal = Date.now() + this.passwordexpirationdays * 86400000;
         this._Set('PasswordExpirationTime',newVal.toString());
     }
-}
 
+    public static AutoLockTimeoutSeconds(): number {
+        const value = parseInt(this._Get('AutoLockTimeoutSeconds') || '', 10);
+        return [10, 30, 60, 300].indexOf(value) !== -1 ? value : 10;
+    }
+
+    public static AutoLockTimeoutSecondsSet(value: number): void {
+        if ([10, 30, 60, 300].indexOf(value) !== -1) this._Set('AutoLockTimeoutSeconds', value.toString());
+    }
+}

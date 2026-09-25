@@ -48,6 +48,8 @@ class RestoreView extends View implements ViewModel {
     protected readonly IdMaintainSequence : string = 'MaintainSequence';
     protected readonly IdInsertSequence : string = 'InsertSequence';
     protected readonly IdFileUriP : string = 'FileUriP';
+    protected readonly IdFolderPrompt : string = 'VaultFolderPrompt';
+    protected fileCandidates: Array<{ uri: string; name: string }> = [];
     protected readonly IdSequenceP : string = 'SequenceP';
     protected readonly IdSequence : string = 'Sequence';
     protected readonly IdSelectSequence : string = 'SelectSequence';
@@ -79,6 +81,10 @@ class RestoreView extends View implements ViewModel {
         this._ca = new ConfigActions(State.Password);
         this._aa = new AppActions();
     }    
+
+    protected async onChange(e: Event) {
+        if ((e.target as HTMLElement).id === this.IdFileUri) this.displayConfirm();
+    }
 
     protected async onClick(e: Event) {
         const id = (e.target as HTMLInputElement).id;
@@ -148,15 +154,20 @@ class RestoreView extends View implements ViewModel {
         switch (action) {
             case 'maintainFile':
                 this.hideEl(this.IdFileUriP);
+                this.hideEl(this.IdFolderPrompt);
             break;
             case 'chooseFile':
-                const res = await Config.selectKeyPassUri();
+                const files = await Config.selectKeyPassFiles();
+                this.showEl(this.IdFolderPrompt);
                 this.showEl(this.IdFileUriP);
-                if (res !== false) {
-                    this.setText(this.IdFileUri,res);
-                } else {
-                    this.setText(this.IdFileUri,this.DefaultNoFile);
-                }
+                this.fileCandidates = files === false ? [] : files;
+                const select = this.getEl(this.IdFileUri) as HTMLSelectElement;
+                select.replaceChildren(new Option(this.DefaultNoFile, ''));
+                this.fileCandidates.forEach(file => {
+                    const option = new Option(file.name, file.uri);
+                    select.add(option);
+                });
+                this.displayConfirm();
             break;
             case 'maintainSequence':
                 this.hideEl(this.IdSequenceP);
@@ -177,7 +188,8 @@ class RestoreView extends View implements ViewModel {
     }
 
     protected async confirmRestoreWallet() {
-        const newFile = this.isChecked(this.IdChooseFile) ? this.getText(this.IdFileUri) : undefined;
+        const selectedFile = this.getVal(this.IdFileUri, true);
+        const newFile = this.isChecked(this.IdChooseFile) ? selectedFile : undefined;
         const newSequence = this.isChecked(this.IdInsertSequence) ? this._sequence : undefined;
         const ok = await this._ca.setSequenceAndKeyPassUri(newSequence, newFile);
         if (ok) {
@@ -250,7 +262,7 @@ class RestoreView extends View implements ViewModel {
     <p class="h3">${this._ca.getSequence().join(', ')}</p>
 
      <p class="alert alert-danger">${Localization.text('ui.recordSequence')} (<strong>${Localization.text('ui.beforeReset')}</strong>)</p>
-     <p>${ViewHelpers.button(this.IdStartUsingCryptpass,'Start using CryptPassApp',this.ClassFormBtn)}</p>
+     <p>${ViewHelpers.button(this.IdStartUsingCryptpass,'Start using CryptPass',this.ClassFormBtn)}</p>
 
     `);
                     } else {
@@ -297,7 +309,8 @@ class RestoreView extends View implements ViewModel {
                     <label class="btn btn-outline-primary" for="${this.IdChooseFile}">Choose new file</label>
                 </div>
 
-                <p id="${this.IdFileUriP}"${mustPickFile?'':' class="d-none"'}>New file: <span class="fw-bold text-break" id="${this.IdFileUri}">${this.DefaultNoFile}</span></p>                    
+                <p id="${this.IdFolderPrompt}"${mustPickFile?'':' class="d-none"'}>${Localization.text('file.chooseFolderPrompt')}</p>
+                <p id="${this.IdFileUriP}"${mustPickFile?'':' class="d-none"'}>New file: <select class="form-select" id="${this.IdFileUri}"><option value="">${ViewHelpers.escapeHtmlText(this.DefaultNoFile)}</option></select></p>
 
                 <div class="mt-2 btn-group" role="group"${mustInsertSequence?' class="d-none"':''}>
                     <span${mustInsertSequence?' class="d-none"':''}><input type="radio" class="btn-check" name="btnradio1" id="${this.IdMaintainSequence}" autocomplete="off"${mustInsertSequence?'':' checked="checked"'}>
@@ -340,7 +353,7 @@ class RestoreView extends View implements ViewModel {
             &&   
             (
                 this.isChecked(this.IdMaintainFile) ||
-                (this.isChecked(this.IdChooseFile) && this.getText(this.IdFileUri) != this.DefaultNoFile)
+                (this.isChecked(this.IdChooseFile) && this.getVal(this.IdFileUri, true) !== '')
             )
             &&
             (
@@ -364,7 +377,8 @@ class RestoreView extends View implements ViewModel {
 
 
     public Handlers: EventHandlerModel[] = [
-        {name: 'RestoreViewClick', handler: (e) => this.onClick(e), type: 'click'}/*,
+        {name: 'RestoreViewClick', handler: (e) => this.onClick(e), type: 'click'},
+        {name: 'RestoreViewChange', handler: (e) => this.onChange(e), type: 'change'}/*,
     {name: 'RestoreViewSubmit', handler: (e) => { e.preventDefault(); this.onSubmit(e); }, type: 'submit'}*/
     ];   
 

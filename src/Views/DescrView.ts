@@ -11,14 +11,14 @@ class DescrView extends View implements ViewModel {
     async Init() {
 
         const passDescr = State.CryptPass.getPassDescription().trim();
-        this.setApp(`<h2>${passDescr===''?'Add description':'Edit description'}</h2>
+        this.setApp(`<h2>${Localization.text(passDescr===''?'description.add':'description.edit')}</h2>
         <form id="${this.IdDescriptionForm}">
-        <p>${ViewHelpers.textinput(this.IdDescription,passDescr,'Put the description here',this.ClassFormCtrl)}</p>
-        <p class="alert alert-warning">Warning! This description <strong>won't be encrypted</strong>.
-        So take care not to put any significant or important information in it but keep it as generic as possible.</p>
+        <p>${ViewHelpers.textinput(this.IdDescription,passDescr,Localization.text('description.placeholder'),this.ClassFormCtrl)}</p>
+        <p class="alert alert-warning">${Localization.text('description.warningPrefix')} <strong>${Localization.text('description.warningNotEncrypted')}</strong>.
+        ${Localization.text('description.warningSuffix')}</p>
         <p>${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)}
-        ${ViewHelpers.submit(this.IdSetDescription,'Confirm new description',this.ClassFormBtn)}
-        ${passDescr === '' ? '' : ViewHelpers.button(this.IdRemoveDescription,'Remove description',this.ClassFormBtn)}</p>
+        ${ViewHelpers.submit(this.IdSetDescription,Localization.text('description.confirm'),this.ClassFormBtn)}
+        ${passDescr === '' ? '' : ViewHelpers.button(this.IdRemoveDescription,Localization.text('description.remove'),this.ClassFormBtn)}</p>
         </form>
         `,() => this.clickEl(this.IdGoToInit));
     }
@@ -52,11 +52,11 @@ class DescrView extends View implements ViewModel {
             if (res) {
                 ScenarioController.changeScenario(new OtherView());
             } else {
-                alert('Sorry. We encountered an error setting up the description');
+                alert(Localization.text('description.error'));
                 this.focusEl(this.IdDescription);
             }
         } else {
-            alert('Error. Empty description.');
+            alert(Localization.text('description.empty'));
             this.focusEl(this.IdDescription);
         }
         
@@ -69,4 +69,3 @@ class DescrView extends View implements ViewModel {
 
     
 }
-

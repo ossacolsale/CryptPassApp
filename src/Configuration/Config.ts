@@ -141,11 +141,10 @@ class Config {
         } else return false;
     }*/
 
-    public static async selectKeyPassUri (): Promise<string|false> {
-        const file = await FS.SelectAndReadFile();
-        if (file !== false) {
-            return file[0].uri;
-        } else return false;
+    public static async selectKeyPassFiles (): Promise<Array<{ uri: string; name: string }> | false> {
+        const files = await FS.SelectAndReadFile();
+        if (files === false) return false;
+        return files.map(file => ({ uri: file.uri, name: file.name }));
     }
 
     public static async setKeyPassUri(uri: string): Promise<boolean> {

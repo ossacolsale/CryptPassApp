@@ -1,6 +1,6 @@
 {
   "name": "com.cryptpass.app",
-  "displayName": "CryptPassApp",
+  "displayName": "CryptPass",
   "version": "1.2.0",
   "description": "A sample Apache Cordova application that responds to the deviceready event.",
   "main": "index.js",

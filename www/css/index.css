@@ -1,3 +1,13 @@
+/* Android edge-to-edge: keep the header background behind the status bar,
+   while moving its contents below the real system safe area. */
+body > nav.navbar.sticky-top {
+    padding-top: var(--bs-navbar-padding-y, .5rem);
+}
+
+body {
+    padding-bottom: .5rem;
+}
+
 #app {
     margin: .2em;
     display: none;

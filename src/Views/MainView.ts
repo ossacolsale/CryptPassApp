@@ -11,6 +11,7 @@ class MainView extends View {
     protected readonly IdHandlePwd: string = 'pwd';
     protected readonly IdUnlockForm: string = 'UnlockForm';
     protected readonly IdRestoreOptions: string = 'RestoreOptions';
+    protected readonly IdDeviceUnlock: string = 'DeviceUnlock';
     
     protected readonly IdChangeDescr: string = 'ChangeDescr';
     protected readonly IdManagePwd: string = 'ManagePwd';
@@ -75,18 +76,23 @@ class MainView extends View {
                             this.setApp(out);*/
                         }
                     } else {
+                        const walletName = await WalletProfiles.activeName();
+                        const deviceUnlockRequired = AutoLock.hasDeviceUnlock();
                         this.setApp(`<form id="${this.IdUnlockForm}">
+                        <p>${Localization.text('main.walletToUnlock')}: <strong translate="no">${ViewHelpers.escapeHtmlText(walletName === 'My wallet' ? Localization.text('wallet.defaultName') : walletName)}</strong></p>
+                        ${deviceUnlockRequired ? `<p>${ViewHelpers.button(this.IdDeviceUnlock, Localization.text('main.deviceUnlock'), this.ClassFormBtn)}</p>` : `
                         <p>${ViewHelpers.password(this.IdPassword1,'Type password',this.ClassFormCtrl)}</p>
                         <p>${ViewHelpers.submit(this.IdHandlePwd,'Unlock',this.ClassFormBtn)}
-                        ${ViewHelpers.button(this.IdRestoreOptions,'Restore options',this.ClassFormBtnSec)}</p>
+                        ${ViewHelpers.button(this.IdRestoreOptions,'Restore options',this.ClassFormBtnSec)}</p>`}
                         </form>
                         `);
-                        this.focusEl(this.IdPassword1);
+                        if (!deviceUnlockRequired) this.focusPassword(true);
                     }
                     
                 }
                 catch (e) {
-                    alert('Unable to access the encrypted wallet. Check its file and secure storage.');
+                    console.error('Could not initialize the encrypted wallet', e);
+                    alert(Localization.text('main.accessError'));
                 }
                 
             break;
@@ -140,6 +146,9 @@ class MainView extends View {
                     back: () => ScenarioController.changeScenario(new MainView()), desc: '<p>Select a restore option:</p>', status: 'OK'
                 } as RestoreOptions);
             break;
+            case this.IdDeviceUnlock:
+                if (!await AutoLock.unlockWithDevice()) this.Init();
+            break;
             case this.IdOther:
                 ScenarioController.changeScenario(new OtherView());
             break;
@@ -151,20 +160,30 @@ class MainView extends View {
             async (): Promise<boolean> => {   
                 const pwd = (this.getEl(this.IdPassword1) as HTMLInputElement).value;
                 if (pwd.length < 10) {
-                    alert('Wrong password');
+                    alert(Localization.text('main.wrongPassword'));
                     return false;
-                } else {
-                    const pwdCorrect = await this._aa.Unlock(pwd);
-                    if (pwdCorrect) {
-                        this.Init();
-                        return true;
-                    } else {
-                        alert('Wrong password!');
-                        return false;
-                    }
                 }
-            }, (res) => { if (!res) this.focusEl(this.IdPassword1,true); }
+                let pwdCorrect: boolean;
+                try {
+                    pwdCorrect = await this._aa.Unlock(pwd);
+                } catch (error) {
+                    console.error('Wallet unlock failed', error);
+                    alert(Localization.text('main.unlockError'));
+                    return false;
+                }
+                if (pwdCorrect) {
+                    await this.Init();
+                    return true;
+                }
+                alert(Localization.text('main.wrongPassword'));
+                return false;
+            }, (res) => { if (!res) this.focusPassword(true); }
         );
+    }
+
+    private focusPassword(select: boolean): void {
+        this.focusEl(this.IdPassword1, select);
+        DeviceAuth.showKeyboard();
     }
 
     protected handleDontChPwd() {
@@ -180,5 +199,3 @@ class MainView extends View {
 
     
 }
-
-

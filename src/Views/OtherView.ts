@@ -16,6 +16,7 @@ class OtherView extends View implements ViewModel {
     protected readonly IdChPwdRemind: string = 'RememberChPwd';
     protected readonly IdSavePreferences: string = 'SavePreferences';
     protected readonly IdRetryLoad: string = 'RetryLoad';
+    protected readonly IdLockTimeout = 'LockTimeout';
 
     protected readonly IdRefreshSequence: string = 'RefreshSequence';
     protected readonly IdConfirmSequenceRefresh: string = 'ConfirmSequenceRefresh';
@@ -48,7 +49,7 @@ class OtherView extends View implements ViewModel {
         ${ViewHelpers.button(this.IdWalletProfiles,'Manage wallets',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdRestore,'Restore/reset wallet',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions,'Read instructions',this.ClassMenuBtn)}
-        ${ViewHelpers.button(this.IdChangeDescr,passDescr==''?'Add a description to your wallet':'Change description to your wallet',this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdChangeDescr,Localization.text(passDescr===''?'other.changeDescriptionAdd':'other.changeDescription'),this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdAbout,'About author',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu,'Go back',this.ClassFormBtnSec)}
         <p class="mt-3"><label for="AppLanguage">Language</label>
@@ -118,7 +119,7 @@ class OtherView extends View implements ViewModel {
 
     private showAbout() {
         this.setApp(`<h2>About author</h2>
-            <p>CryptPassApp is Developed by<p>
+            <p>CryptPass is Developed by<p>
             <p><strong>Giancarlo Mangiagli</strong></p>
             <p>www.giancarlomangiagli.it</p>
             <p>${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)}</p>
@@ -140,10 +141,18 @@ class OtherView extends View implements ViewModel {
             this.setApp(`<h2>Preferences</h2>
             <form id="${this.IdChPreferencesForm}">
             <p>${ViewHelpers.checkbox(this.IdChPwdRemind,this.RemindValue,this.preferences.ChPwdReminder)} ${ViewHelpers.label(this.IdChPwdRemind,'Remind me to change password every month')}</p>
+            <label for="${this.IdLockTimeout}">${Localization.text('settings.autoLock')}</label>
+            <select id="${this.IdLockTimeout}" class="form-select mb-3">
+                <option value="10">${Localization.text('settings.10seconds')}</option>
+                <option value="30">${Localization.text('settings.30seconds')}</option>
+                <option value="60">${Localization.text('settings.1minute')}</option>
+                <option value="300">${Localization.text('settings.5minutes')}</option>
+            </select>
             <p>${ViewHelpers.submit(this.IdSavePreferences,'Save preferences',this.ClassFormBtn)}
             ${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)}</p>
             </form>
                 `, () => this.clickEl(this.IdGoToInit));
+            (this.getEl(this.IdLockTimeout) as HTMLSelectElement).value = LocalStorage.AutoLockTimeoutSeconds().toString();
         } catch (e) {
             this.setApp(`<h2>Preferences</h2>
                 <p>${Localization.text('preferences.loadError')}</p>
@@ -157,6 +166,7 @@ class OtherView extends View implements ViewModel {
 
     protected async SavePreferences() {
         this.preferences.ChPwdReminder = this.isChecked(this.IdChPwdRemind);
+        LocalStorage.AutoLockTimeoutSecondsSet(parseInt((this.getEl(this.IdLockTimeout) as HTMLSelectElement).value, 10));
         const saved = await Config.setPreferences(this.preferences);
         if (saved)
             this.Init();

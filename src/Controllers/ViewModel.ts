@@ -109,16 +109,28 @@ abstract class View implements ViewModel {
 
     protected async LoaderShowAsync (doSomethingBeforeHiding?: () => any | Promise<any>, doSomethingAfterHiding?: (res?: any) => any | Promise<any>, hideAfter: boolean = true) {
         this.LoaderShowCommands();
-        if (doSomethingBeforeHiding !== undefined) 
-            setTimeout(async () => {
-                let res;
-                if (doSomethingBeforeHiding !== undefined) {
-                    res = await doSomethingBeforeHiding(); 
-                }
-                if (hideAfter) this.LoaderHide(); 
-                if (doSomethingAfterHiding !== undefined) 
-                    await doSomethingAfterHiding(res);
-            }, this.LoaderShowMs);
+        let result: any = false;
+        try {
+            if (doSomethingBeforeHiding !== undefined) {
+                await new Promise(resolve => window.setTimeout(resolve, this.LoaderShowMs));
+                result = await doSomethingBeforeHiding();
+            }
+        } catch (error) {
+            console.error('CryptPass operation failed', error);
+            alert(Localization.text('alert.operationFailed'));
+            CommonHelpers.StandardError(error);
+        } finally {
+            if (hideAfter) this.LoaderHide();
+        }
+        if (doSomethingAfterHiding !== undefined) {
+            try {
+                await doSomethingAfterHiding(result);
+            } catch (error) {
+                console.error('CryptPass post-operation action failed', error);
+                alert(Localization.text('alert.operationFailed'));
+                CommonHelpers.StandardError(error);
+            }
+        }
     }
 
     protected LoaderHide() {

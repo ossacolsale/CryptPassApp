@@ -11,24 +11,36 @@ declare class State {
     static set CryptPass(value: CryptPassCached | null);
     static get EntriesManage(): EntriesManage;
     static set EntriesManage(em: EntriesManage | null);
-    static logout(): void;
+    static logout(preserveDeviceUnlock?: boolean): void;
 }
 declare class AutoLock {
-    private static readonly inactivityMs;
     private static readonly clipboardClearMs;
     private static inactivityTimer;
+    private static lastActivity;
+    private static deviceUnlockPassword;
+    private static locking;
     private static clipboardTimer;
     private static copiedSecret;
     private static listening;
     private static removeElectronListener;
     static start(): void;
     private static reset;
+    private static scheduleLock;
+    private static checkInactivity;
     private static onVisibilityChange;
     private static onWindowBlur;
-    static stop(): void;
+    static stop(clearDeviceUnlock?: boolean): void;
     static scheduleClipboardCleanup(secret: string): void;
     static clearClipboardIfUnchanged(): Promise<void>;
     private static lock;
+    private static lockSession;
+    static hasDeviceUnlock(): boolean;
+    static unlockWithDevice(): Promise<boolean>;
+}
+declare class DeviceAuth {
+    private static call;
+    static hasScreenLock(): Promise<boolean>;
+    static confirm(): Promise<boolean>;
 }
 declare class AppActions {
     Unlock(pwd: string): Promise<boolean>;
@@ -67,7 +79,10 @@ declare class Config {
     static readKeyPass(): Promise<{} | false>;
     static writeKeyPass(kp: {}): Promise<boolean>;
     static newKeyPass(kp?: {}): Promise<boolean>;
-    static selectKeyPassUri(): Promise<string | false>;
+    static selectKeyPassFiles(): Promise<Array<{
+        uri: string;
+        name: string;
+    }> | false>;
     static setKeyPassUri(uri: string): Promise<boolean>;
 }
 type configaction = 'NEW' | 'RestoreKeyPassFile' | 'RestoreSequence' | 'InitKeyPassAndSequence';
@@ -199,6 +214,10 @@ declare class ElectronFS {
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
 declare class AndroidFS {
+    private static treeGrantKey;
+    private static saveTreeGrant;
+    private static selectVaultFolder;
+    private static resolveUri;
     static NewFile(fileName: string, fileContent: string): Promise<string | false>;
     static WriteFile(uri: string, fileContent: string): Promise<boolean>;
     static ReadFile(uri: string): Promise<string | false>;
@@ -211,7 +230,7 @@ declare class FS {
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
-type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime';
+type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime' | 'AutoLockTimeoutSeconds';
 declare class LocalStorage {
     protected static readonly initialized: string;
     protected static readonly firsttime: string;
@@ -225,9 +244,12 @@ declare class LocalStorage {
     static InitializedKeySet(): void;
     static PasswordExpirationTime(): number;
     static PasswordExpirationTimeSet(): void;
+    static AutoLockTimeoutSeconds(): number;
+    static AutoLockTimeoutSecondsSet(value: number): void;
 }
 declare let androidSecureStorage: SecureStorageInstance | undefined;
-declare function getAndroidSecureStorage(): SecureStorageInstance;
+declare let androidSecureStorageReady: Promise<SecureStorageInstance> | undefined;
+declare function getAndroidSecureStorage(): Promise<SecureStorageInstance>;
 declare class SecureStorage {
     static getVal(key: string): Promise<string | false>;
     static setVal(key: string, value: string): Promise<string | false>;
@@ -235,6 +257,7 @@ declare class SecureStorage {
 }
 declare class CommonHelpers {
     static StandardError(e: unknown): false;
+    static withTimeout<T>(promise: Promise<T>, operation: string, timeoutMs?: number): Promise<T>;
     static CustomError(msg: string): false;
     static CheckNewPassword(pwd1: string, pwd2: string): boolean;
     static CheckChPassword(oldpwd: string, pwd1: string, pwd2: string): true | 'wrongOld' | 'wrongNew';
@@ -328,6 +351,7 @@ declare class MainView extends View {
     protected readonly IdHandlePwd: string;
     protected readonly IdUnlockForm: string;
     protected readonly IdRestoreOptions: string;
+    protected readonly IdDeviceUnlock: string;
     protected readonly IdChangeDescr: string;
     protected readonly IdManagePwd: string;
     protected readonly IdOther: string;
@@ -357,6 +381,7 @@ declare class OtherView extends View implements ViewModel {
     protected readonly IdChPwdRemind: string;
     protected readonly IdSavePreferences: string;
     protected readonly IdRetryLoad: string;
+    protected readonly IdLockTimeout = "LockTimeout";
     protected readonly IdRefreshSequence: string;
     protected readonly IdConfirmSequenceRefresh: string;
     protected readonly IdPassword1: string;
@@ -494,6 +519,11 @@ declare class RestoreView extends View implements ViewModel {
     protected readonly IdMaintainSequence: string;
     protected readonly IdInsertSequence: string;
     protected readonly IdFileUriP: string;
+    protected readonly IdFolderPrompt: string;
+    protected fileCandidates: Array<{
+        uri: string;
+        name: string;
+    }>;
     protected readonly IdSequenceP: string;
     protected readonly IdSequence: string;
     protected readonly IdSelectSequence: string;
@@ -508,6 +538,7 @@ declare class RestoreView extends View implements ViewModel {
     protected readonly DefaultNoFile: string;
     protected readonly DefaultNoSequence: string;
     Init(options?: RestoreOptions): Promise<void>;
+    protected onChange(e: Event): Promise<void>;
     protected onClick(e: Event): Promise<void>;
     protected restart(): void;
     protected restoreWalletDisplay(action: 'maintainFile' | 'chooseFile' | 'maintainSequence' | 'insertSequence' | 'selectSequenceCancel'): Promise<void>;

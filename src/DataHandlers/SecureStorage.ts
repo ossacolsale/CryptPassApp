@@ -1,16 +1,23 @@
 // The Cordova plugin is available on Android; Electron uses the desktop preload bridge.
 // Instantiate lazily so Electron never asks Cordova for a missing plugin proxy.
 let androidSecureStorage: SecureStorageInstance | undefined;
+let androidSecureStorageReady: Promise<SecureStorageInstance> | undefined;
 
-function getAndroidSecureStorage(): SecureStorageInstance {
-    if (!androidSecureStorage) {
-        androidSecureStorage = new cordova.plugins.SecureStorage(
-            function () { /* Initialization completed. */ },
-            function () { /* Secure storage errors are handled at the call site. */ },
-            'cryptpass_store'
-        );
+function getAndroidSecureStorage(): Promise<SecureStorageInstance> {
+    if (!androidSecureStorageReady) {
+        androidSecureStorageReady = new Promise<SecureStorageInstance>((resolve, reject) => {
+            androidSecureStorage = new cordova.plugins.SecureStorage(
+                () => resolve(androidSecureStorage!),
+                reject,
+                'cryptpass_store'
+            );
+        }).catch(error => {
+            androidSecureStorage = undefined;
+            androidSecureStorageReady = undefined;
+            throw error;
+        });
     }
-    return androidSecureStorage;
+    return androidSecureStorageReady!;
 }
 
 
@@ -34,21 +41,20 @@ class SecureStorage {
                     /*return new Promise((resolve, reject)=> {
                         cordova.plugins.SecureKeyStore.get(resolve, reject, key);
                     });*/
-                    return new Promise((resolve, reject) => {
-                        getAndroidSecureStorage().get(
-                            function (value) { 
-                                resolve(value); 
-                            },
-                            function (error) { 
-                                if (error && error.message && error.message.indexOf('not found') !== -1) {
-                                    resolve(false); // Nessuna config trovata
+                    const storage = await CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
+                    return CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                        storage.get(
+                            function (value) { resolve(value); },
+                            function (error) {
+                                if (error && error.message && error.message.toLowerCase().indexOf('not found') !== -1) {
+                                    resolve(false);
                                 } else {
                                     reject(error);
                                 }
                             },
                             key
                         );
-                    });
+                    }), 'Android secure storage');
                 default:
                     return false;
             }
@@ -68,18 +74,15 @@ class SecureStorage {
                     return new Promise((resolve, reject)=> {
                         cordova.plugins.SecureKeyStore.set(resolve, reject, key, value);
                     });*/
-                    return new Promise((resolve, reject) => {
-                        getAndroidSecureStorage().set(
-                            function (key) { 
-                                resolve(key); 
-                            },
-                            function (error) { 
-                                reject(error); 
-                            },
+                    const storage = await CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
+                    return CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                        storage.set(
+                            function (storedKey) { resolve(storedKey); },
+                            reject,
                             key,
                             value
                         );
-                    });
+                    }), 'Android secure storage');
                 default:
                     return false;
             }
