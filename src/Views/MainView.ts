@@ -172,9 +172,9 @@ class MainView extends View {
                     const isLegacy = diagnostic.length > 1 && diagnostic[0] === 'UNLOCK_DIAG' && diagnostic[1] === 'legacy';
                     const message = isLegacy ? 'main.unlockLegacyError' : 'main.unlockError';
                     const details = diagnostic.length === 5 && diagnostic[0] === 'UNLOCK_DIAG'
-                        ? `\n\nDiagnostica: vault=${diagnostic[1]}, voci=${diagnostic[2]}, cifrato=${diagnostic[3]} caratteri, errore=${diagnostic[4]}.`
+                        ? `Diagnostica: vault=${diagnostic[1]}, voci=${diagnostic[2]}, cifrato=${diagnostic[3]} caratteri, errore=${diagnostic[4]}.\n\n`
                         : '';
-                    alert(Localization.text(message) + details);
+                    alert(details + Localization.text(message));
                     return false;
                 }
                 if (pwdCorrect) {
