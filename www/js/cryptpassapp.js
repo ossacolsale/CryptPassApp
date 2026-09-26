@@ -106,8 +106,8 @@ class AutoLock {
         this.clipboardTimer = window.setTimeout(() => { void this.clearClipboardIfUnchanged(); }, this.clipboardClearMs);
     }
     static clearClipboardIfUnchanged() {
-        var _b, _c;
         return __awaiter(this, void 0, void 0, function* () {
+            var _b, _c;
             const secret = this.copiedSecret;
             this.copiedSecret = null;
             if (this.clipboardTimer !== undefined)
@@ -213,6 +213,11 @@ class DeviceAuth {
             Localization.text('main.deviceAuthTitle'), Localization.text('main.deviceAuthDescription')
         ]));
     }
+    static showKeyboard() {
+        if (cordova.platformId !== 'android')
+            return;
+        window.setTimeout(() => cordova.exec(() => undefined, (error) => console.error('Could not open the Android keyboard', error), 'CryptPassDeviceAuth', 'showKeyboard', []), 120);
+    }
 }
 class AppActions {
     Unlock(pwd) {
@@ -222,7 +227,37 @@ class AppActions {
             const k = State.CryptPass.GetK(pwd);
             if (k) {
                 State.K = k;
-                State.EntriesManage = State.CryptPass.GetEntriesManage(State.K, true);
+                try {
+                    State.EntriesManage = State.CryptPass.GetEntriesManage(State.K, true);
+                }
+                catch (error) {
+                    const keyPass = data.kp;
+                    const formatVersion = keyPass && keyPass.Key ? keyPass.Key.FormatVersion : undefined;
+                    const entries = keyPass && keyPass.Pass ? keyPass.Pass.Entries : undefined;
+                    const entriesLength = typeof entries === 'string' ? entries.length : 0;
+                    let envelopeType = 'legacy-or-invalid';
+                    if (typeof entries === 'string') {
+                        try {
+                            const envelope = JSON.parse(entries);
+                            if (envelope && envelope.v === 2 && envelope.alg === 'A256GCM')
+                                envelopeType = 'aead-v2';
+                            else if (envelope && typeof envelope === 'object')
+                                envelopeType = 'json-other';
+                        }
+                        catch (_) {
+                            envelopeType = 'non-json';
+                        }
+                    }
+                    const format = formatVersion === 2 ? 'v2' : 'legacy';
+                    const failure = error instanceof Error && error.message === 'Decryption failed' ? 'decrypt' : 'parse-or-structure';
+                    const diagnostic = 'UNLOCK_DIAG|' + format + '|' + envelopeType + '|' + entriesLength + '|' + failure;
+                    console.error('Key derivation returned a value, but decrypting/parsing Pass.Entries failed.', { formatVersion: formatVersion === undefined ? 1 : formatVersion, envelopeType: envelopeType, entriesLength: entriesLength, failure: failure, error: error });
+                    State.CryptPass = null;
+                    State.EntriesManage = null;
+                    State.K = '';
+                    State.Password = '';
+                    throw new Error(diagnostic);
+                }
                 State.Password = pwd;
                 AutoLock.start();
                 return true;
@@ -264,8 +299,8 @@ class Config {
         });
     }
     static getPreferences() {
-        var _b;
         return __awaiter(this, void 0, void 0, function* () {
+            var _b;
             const config = yield this.getConfig();
             if (config !== false) {
                 return (_b = config.Preferences) !== null && _b !== void 0 ? _b : this.defaultPreferences;
@@ -361,8 +396,8 @@ class Config {
                 return false;
         });
     }
-    static newKeyPass(kp = {}) {
-        return __awaiter(this, void 0, void 0, function* () {
+    static newKeyPass() {
+        return __awaiter(this, arguments, void 0, function* (kp = {}) {
             const uri = yield FS.NewFile(this.defaultKeyPassFilename, JSON.stringify(kp));
             if (uri !== false) {
                 return this.setKeyPassUri(uri);
@@ -852,24 +887,34 @@ class View {
                     doSomethingAfterHiding(res);
             }, this.LoaderShowMs);
     }
-    LoaderShowAsync(doSomethingBeforeHiding, doSomethingAfterHiding, hideAfter = true) {
-        return __awaiter(this, void 0, void 0, function* () {
+    LoaderShowAsync(doSomethingBeforeHiding_1, doSomethingAfterHiding_1) {
+        return __awaiter(this, arguments, void 0, function* (doSomethingBeforeHiding, doSomethingAfterHiding, hideAfter = true) {
             this.LoaderShowCommands();
+            let result = false;
             try {
                 if (doSomethingBeforeHiding !== undefined) {
                     yield new Promise(resolve => window.setTimeout(resolve, this.LoaderShowMs));
-                    const res = yield doSomethingBeforeHiding();
-                    if (doSomethingAfterHiding !== undefined)
-                        yield doSomethingAfterHiding(res);
+                    result = yield doSomethingBeforeHiding();
                 }
             }
             catch (error) {
-                alert('Operation failed. Check the selected wallet and storage permission, then try again.');
+                console.error('CryptPass operation failed', error);
+                alert(Localization.text('alert.operationFailed'));
                 CommonHelpers.StandardError(error);
             }
             finally {
                 if (hideAfter)
                     this.LoaderHide();
+            }
+            if (doSomethingAfterHiding !== undefined) {
+                try {
+                    yield doSomethingAfterHiding(result);
+                }
+                catch (error) {
+                    console.error('CryptPass post-operation action failed', error);
+                    alert(Localization.text('alert.operationFailed'));
+                    CommonHelpers.StandardError(error);
+                }
             }
         });
     }
@@ -997,32 +1042,31 @@ class AndroidFS {
             }
         });
     }
-    static NewFile(fileName, fileContent) {
+    static NewFile(defaultFileName, fileContent) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const blob = new Blob([fileContent], { type: defaultMimeType });
-                const uri = yield cordova.plugins.saveDialog.getFileUri(blob, fileName);
-                yield cordova.plugins.saveDialog.saveFileByUri(blob, uri);
-                let stableUri = uri;
-                try {
-                    const selectedFolder = yield this.selectVaultFolder();
-                    const file = selectedFolder.files.find(candidate => candidate.name === fileName);
-                    if (file) {
-                        stableUri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(file.relativePath);
-                        this.saveTreeGrant(stableUri, selectedFolder.treeUri, file.relativePath);
-                    }
-                    else {
-                        alert(Localization.text('file.folderGrantSkipped'));
-                    }
-                }
-                catch (_) {
-                    alert(Localization.text('file.folderGrantSkipped'));
-                }
+                const enteredName = window.prompt(Localization.text('file.newVaultName'), defaultFileName);
+                if (enteredName === null)
+                    return false;
+                let fileName = enteredName.trim();
+                if (!fileName || /[\\/\u0000-\u001f]/.test(fileName))
+                    throw new Error(Localization.text('file.invalidVaultName'));
+                if (!/\.json$/i.test(fileName))
+                    fileName += '.json';
+                const selectedFolder = yield this.selectVaultFolder();
+                yield new Promise((resolve, reject) => cordova.exec(() => resolve(), reject, 'Chooser', 'createFileInTree', [selectedFolder.treeUri, fileName, fileContent]));
+                const stableUri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(fileName);
+                this.saveTreeGrant(stableUri, selectedFolder.treeUri, fileName);
+                const savedContent = yield this.ReadFile(stableUri);
+                if (savedContent === false || savedContent.replace(/\s+$/, '') !== fileContent)
+                    throw new Error('Il vault è stato creato ma la verifica della scrittura non è riuscita.');
                 window.localStorage.setItem(stableUri, fileContent);
                 return stableUri;
             }
             catch (e) {
-                return CommonHelpers.StandardError(e);
+                console.error('Android vault creation failed', e);
+                alert(e instanceof Error ? e.message : String(e));
+                return false;
             }
         });
     }
@@ -1040,7 +1084,8 @@ class AndroidFS {
                 if (uri_content === false && uri_bk_content === null)
                     window.localStorage.setItem(uri, fileContent);
                 yield cordova.plugins.saveDialog.saveFileByUri(blob, liveUri);
-                return true;
+                const savedContent = yield this.ReadFile(uri);
+                return savedContent !== false && savedContent.replace(/\s+$/, '') === fileContent;
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -1075,7 +1120,9 @@ class AndroidFS {
                 });
             }
             catch (e) {
-                return CommonHelpers.StandardError(e);
+                console.error('Android vault folder selection failed', e);
+                alert(e instanceof Error ? e.message : String(e));
+                return false;
             }
         });
     }
@@ -1191,8 +1238,8 @@ function getAndroidSecureStorage() {
 }
 class SecureStorage {
     static getVal(key) {
-        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron': {
@@ -1230,8 +1277,8 @@ class SecureStorage {
         });
     }
     static setVal(key, value) {
-        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron':
@@ -1251,8 +1298,8 @@ class SecureStorage {
         });
     }
     static delVal(key) {
-        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 switch (cordova.platformId) {
                     case 'electron':
@@ -1572,8 +1619,8 @@ class DescrView extends View {
             }
         });
     }
-    handleSet(remove = false) {
-        return __awaiter(this, void 0, void 0, function* () {
+    handleSet() {
+        return __awaiter(this, arguments, void 0, function* (remove = false) {
             const descr = this.getEl(this.IdDescription).value.trim();
             if (descr.length > 0 || remove) {
                 this.LoaderShow();
@@ -1665,11 +1712,12 @@ class MainView extends View {
                         </form>
                         `);
                             if (!deviceUnlockRequired)
-                                this.focusEl(this.IdPassword1);
+                                this.focusPassword(true);
                         }
                     }
                     catch (e) {
-                        alert('Unable to access the encrypted wallet. Check its file and secure storage.');
+                        console.error('Could not initialize the encrypted wallet', e);
+                        alert(Localization.text('main.accessError'));
                     }
                     break;
                 case 'MissingKeypass':
@@ -1739,23 +1787,37 @@ class MainView extends View {
             yield this.LoaderShowAsync(() => __awaiter(this, void 0, void 0, function* () {
                 const pwd = this.getEl(this.IdPassword1).value;
                 if (pwd.length < 10) {
-                    alert('Wrong password');
+                    alert(Localization.text('main.wrongPassword'));
                     return false;
                 }
-                else {
-                    const pwdCorrect = yield this._aa.Unlock(pwd);
-                    if (pwdCorrect) {
-                        yield this.Init();
-                        return true;
-                    }
-                    else {
-                        alert('Wrong password!');
-                        return false;
-                    }
+                let pwdCorrect;
+                try {
+                    pwdCorrect = yield this._aa.Unlock(pwd);
                 }
+                catch (error) {
+                    console.error('Wallet unlock failed', error);
+                    const diagnostic = error instanceof Error ? error.message.split('|') : [];
+                    const isLegacy = diagnostic.length > 1 && diagnostic[0] === 'UNLOCK_DIAG' && diagnostic[1] === 'legacy';
+                    const message = isLegacy ? 'main.unlockLegacyError' : 'main.unlockError';
+                    const details = diagnostic.length === 5 && diagnostic[0] === 'UNLOCK_DIAG'
+                        ? `\n\nDiagnostica: vault=${diagnostic[1]}, voci=${diagnostic[2]}, cifrato=${diagnostic[3]} caratteri, errore=${diagnostic[4]}.`
+                        : '';
+                    alert(Localization.text(message) + details);
+                    return false;
+                }
+                if (pwdCorrect) {
+                    yield this.Init();
+                    return true;
+                }
+                alert(Localization.text('main.wrongPassword'));
+                return false;
             }), (res) => { if (!res)
-                this.focusEl(this.IdPassword1, true); });
+                this.focusPassword(true); });
         });
+    }
+    focusPassword(select) {
+        this.focusEl(this.IdPassword1, select);
+        DeviceAuth.showKeyboard();
     }
     handleDontChPwd() {
         LocalStorage.PasswordExpirationTimeSet();
@@ -2801,8 +2863,8 @@ class RestoreView extends View {
     printSequence() {
         this.setMarkup(this.IdSequenceComposer, this._sequence.join(', '));
     }
-    handleKO(step = 'KOStart') {
-        return __awaiter(this, void 0, void 0, function* () {
+    handleKO() {
+        return __awaiter(this, arguments, void 0, function* (step = 'KOStart') {
             switch (step) {
                 case 'ProceedInitialization':
                     const pwd1 = this.getVal(this.IdPassword1, true);
@@ -2992,8 +3054,8 @@ class WalletProfilesView extends View {
         });
     }
     onSubmit(event) {
-        var _a;
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             if (event.target.id !== this.IdWalletManager)
                 return;
             event.preventDefault();

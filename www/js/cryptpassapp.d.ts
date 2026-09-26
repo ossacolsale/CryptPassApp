@@ -41,6 +41,7 @@ declare class DeviceAuth {
     private static call;
     static hasScreenLock(): Promise<boolean>;
     static confirm(): Promise<boolean>;
+    static showKeyboard(): void;
 }
 declare class AppActions {
     Unlock(pwd: string): Promise<boolean>;
@@ -218,7 +219,7 @@ declare class AndroidFS {
     private static saveTreeGrant;
     private static selectVaultFolder;
     private static resolveUri;
-    static NewFile(fileName: string, fileContent: string): Promise<string | false>;
+    static NewFile(defaultFileName: string, fileContent: string): Promise<string | false>;
     static WriteFile(uri: string, fileContent: string): Promise<boolean>;
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
@@ -363,6 +364,7 @@ declare class MainView extends View {
     protected onSubmit(e: Event): Promise<void>;
     protected onClick(e: Event): Promise<void>;
     protected handlePwd(): Promise<void>;
+    private focusPassword;
     protected handleDontChPwd(): void;
     Handlers: EventHandlerModel[];
 }

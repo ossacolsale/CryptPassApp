@@ -18,7 +18,8 @@
   "main.password": "Inserisci la password",
   "main.restore": "Opzioni di ripristino",
   "main.wrongPassword": "Password errata!",
-  "main.unlockError": "Non è stato possibile sbloccare il portafoglio. Controlla il file selezionato e la sequenza di recupero.",
+  "main.unlockError": "La password è corretta, ma le voci cifrate del portafoglio non sono leggibili. Il file potrebbe essere incompleto, danneggiato o appartenere a un altro portafoglio.",
+  "main.unlockLegacyError": "Il vault è in formato legacy: qui password e sequenza non possono essere verificate con certezza. Controlla che la sequenza sia quella associata proprio a questo file; la conversione a v2 avviene solo dopo uno sblocco riuscito e un salvataggio.",
   "main.accessError": "Impossibile accedere al portafoglio cifrato. Controlla il file e l'archivio protetto.",
   "main.manageWallets": "Gestisci i portafogli",
   "other.title": "Altre opzioni",
@@ -337,5 +338,7 @@
   "ui.sequenceIncomplete": "Devi inserire l’intera sequenza!",
   "ui.localeFailure": "Non è stato possibile caricare le risorse linguistiche.",
   "preferences.loadError": "Impossibile caricare le preferenze. Riprova.",
-  "wallet.defaultName": "Il mio portafoglio"
+  "wallet.defaultName": "Il mio portafoglio",
+  "file.newVaultName": "Scegli il nome del file del nuovo portafoglio:",
+  "file.invalidVaultName": "Il nome del file è vuoto o contiene caratteri non consentiti da Android."
 }

@@ -235,7 +235,25 @@ module.exports = function (context) {
                 '                if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {',
                 '                    Uri treeUri = data.getData();',
                 '                    int takeFlags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);',
+                '                    int requiredFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;',
+                '                    if ((takeFlags & requiredFlags) != requiredFlags) {',
+                '                        this.callback.error("The selected folder did not grant both read and write access");',
+                '                        return;',
+                '                    }',
                 '                    this.cordova.getActivity().getContentResolver().takePersistableUriPermission(treeUri, takeFlags);',
+                '                    boolean persistedRead = false;',
+                '                    boolean persistedWrite = false;',
+                '                    for (android.content.UriPermission permission : this.cordova.getActivity().getContentResolver().getPersistedUriPermissions()) {',
+                '                        if (treeUri.equals(permission.getUri())) {',
+                '                            persistedRead = permission.isReadPermission();',
+                '                            persistedWrite = permission.isWritePermission();',
+                '                            break;',
+                '                        }',
+                '                    }',
+                '                    if (!persistedRead || !persistedWrite) {',
+                '                        this.callback.error("Android did not persist both read and write access to the selected folder");',
+                '                        return;',
+                '                    }',
                 '                    JSONObject selection = new JSONObject();',
                 '                    selection.put("treeUri", treeUri.toString());',
                 '                    selection.put("files", listVaultFilesInTree(treeUri));',
@@ -288,6 +306,77 @@ module.exports = function (context) {
                 chooser = chooser.replace(helperAnchor, helper + helperAnchor);
             }
         }
+        if (!chooser.includes('action.equals("createFileInTree")')) {
+            const actionAnchor = '            } else if (action.equals("readFile")) {';
+            const createAction = [
+                '            } else if (action.equals("createFileInTree")) {',
+                '                try {',
+                '                    Uri created = createVaultFileInTree(Uri.parse(args.getString(0)), args.getString(1), args.getString(2));',
+                '                    callbackContext.success(created.toString());',
+                '                } catch (Exception error) {',
+                '                    callbackContext.error("Unable to create vault in the selected folder: " + error.toString());',
+                '                }',
+                '                return true;',
+                actionAnchor
+            ].join('\n');
+            if (!chooser.includes(actionAnchor)) throw new Error('Could not locate Chooser read action for create action');
+            chooser = chooser.replace(actionAnchor, createAction);
+        }
+        {
+            const helperAnchor = '    private Uri findFileInTree(Uri treeUri, String fileName) {';
+            const helper = [
+                '    private Uri createVaultFileInTree(Uri treeUri, String fileName, String contents) throws Exception {',
+                '        if (fileName == null || fileName.isEmpty()) throw new IllegalArgumentException("Vault file name is empty");',
+                '        ContentResolver resolver = this.cordova.getActivity().getContentResolver();',
+                '        boolean canRead = false;',
+                '        boolean canWrite = false;',
+                '        for (android.content.UriPermission permission : resolver.getPersistedUriPermissions()) {',
+                '            if (treeUri.equals(permission.getUri())) {',
+                '                canRead = permission.isReadPermission();',
+                '                canWrite = permission.isWritePermission();',
+                '                break;',
+                '            }',
+                '        }',
+                '        if (!canRead || !canWrite) throw new SecurityException("The selected folder does not have a persistent read and write grant");',
+                '        String treeDocumentId = DocumentsContract.getTreeDocumentId(treeUri);',
+                '        Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId);',
+                '        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocumentId);',
+                '        Cursor cursor = resolver.query(childrenUri, new String[] { DocumentsContract.Document.COLUMN_DISPLAY_NAME }, null, null, null);',
+                '        if (cursor != null) {',
+                '            try {',
+                '                while (cursor.moveToNext()) {',
+                '                    if (fileName.equals(cursor.getString(0))) throw new IllegalStateException("A file with this name already exists in the selected folder");',
+                '                }',
+                '            } finally {',
+                '                cursor.close();',
+                '            }',
+                '        }',
+                '        Uri created = DocumentsContract.createDocument(resolver, parentUri, "application/json", fileName);',
+                '        if (created == null) throw new IllegalStateException("The document provider did not create the vault file");',
+                '        Uri treeDocumentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getDocumentId(created));',
+                '        try (java.io.OutputStream output = resolver.openOutputStream(treeDocumentUri, "wt")) {',
+                '            if (output == null) throw new IllegalStateException("The document provider did not open the vault for writing");',
+                '            output.write(contents.getBytes(java.nio.charset.StandardCharsets.UTF_8));',
+                '            output.flush();',
+                '        } catch (Exception error) {',
+                '            try { DocumentsContract.deleteDocument(resolver, treeDocumentUri); } catch (Exception ignored) { }',
+                '            throw error;',
+                '        }',
+                '        return treeDocumentUri;',
+                '    }',
+                ''
+            ].join('\n');
+            const createHelperPattern = /    private Uri createVaultFileInTree\(Uri treeUri, String fileName(?:, String contents)?\) throws Exception \{[\s\S]*?\n    \}\n/;
+            if (createHelperPattern.test(chooser)) chooser = chooser.replace(createHelperPattern, helper);
+            else {
+                if (!chooser.includes(helperAnchor)) throw new Error('Could not locate Chooser tree helper for file creation');
+                chooser = chooser.replace(helperAnchor, helper + helperAnchor);
+            }
+        }
+        chooser = chooser.replace(
+            'createVaultFileInTree(Uri.parse(args.getString(0)), args.getString(1))',
+            'createVaultFileInTree(Uri.parse(args.getString(0)), args.getString(1), args.getString(2))'
+        );
         fs.writeFileSync(chooserPath, chooser);
     }
 
@@ -302,11 +391,12 @@ module.exports = function (context) {
         .replace(/^import android\.view\.View;\n/m, '')
         .replace(/^import androidx\.core\.graphics\.Insets;\n/m, '')
         .replace(/^import androidx\.core\.view\.ViewCompat;\n/m, '')
+        .replace(/^import androidx\.core\.view\.WindowCompat;\n/m, '')
         .replace(/^import androidx\.core\.view\.WindowInsetsCompat;\n/m, '');
 
     source = source.replace(
         /(package [^;]+;\s*)/,
-        match => match + '\nimport android.view.View;\nimport androidx.core.view.ViewCompat;\nimport androidx.core.view.WindowInsetsCompat;\n'
+        match => match + '\nimport android.view.View;\nimport android.view.ViewGroup;\nimport androidx.core.view.ViewCompat;\nimport androidx.core.view.WindowCompat;\nimport androidx.core.view.WindowInsetsCompat;\n'
     );
 
     const loadUrl = '        loadUrl(launchUrl);';
@@ -315,27 +405,33 @@ module.exports = function (context) {
         source = source.replace(loadUrl, loadUrl + '\n\n        ensureInsetsReachWebView();');
 
     const method = [
-        '    /** Reads insets from the window decor and applies them to the WebView content. */',
+        '    /** Applies the real Android system-bar insets to the WebView content area. */',
         '    private void ensureInsetsReachWebView() {',
         '        if (appView == null) return;',
         '        View webView = appView.getView();',
         '        View decorView = getWindow().getDecorView();',
-        '        final int initialLeft = webView.getPaddingLeft();',
-        '        final int initialTop = webView.getPaddingTop();',
-        '        final int initialRight = webView.getPaddingRight();',
-        '        final int initialBottom = webView.getPaddingBottom();',
+        '        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);',
+        '        ViewGroup.LayoutParams initialParams = webView.getLayoutParams();',
+        '        if (!(initialParams instanceof ViewGroup.MarginLayoutParams)) return;',
+        '        ViewGroup.MarginLayoutParams initialMargins = (ViewGroup.MarginLayoutParams) initialParams;',
+        '        final int initialLeft = initialMargins.leftMargin;',
+        '        final int initialTop = initialMargins.topMargin;',
+        '        final int initialRight = initialMargins.rightMargin;',
+        '        final int initialBottom = initialMargins.bottomMargin;',
         '        int statusBarResource = getResources().getIdentifier("status_bar_height", "dimen", "android");',
-        '        final int statusBarHeight = android.os.Build.VERSION.SDK_INT >= 35 && statusBarResource != 0',
-        '            ? getResources().getDimensionPixelSize(statusBarResource) : 0;',
-        '        webView.setPadding(initialLeft, initialTop + statusBarHeight, initialRight, initialBottom);',
-        '        ViewCompat.setOnApplyWindowInsetsListener(decorView, (view, windowInsets) -> {',
-        '            androidx.core.graphics.Insets safeInsets = android.os.Build.VERSION.SDK_INT >= 35',
-        '                ? windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars() | WindowInsetsCompat.Type.displayCutout())',
-        '                : androidx.core.graphics.Insets.NONE;',
-        '            webView.setPadding(initialLeft + safeInsets.left, initialTop + statusBarHeight,',
+        '        final int statusBarFallback = statusBarResource == 0 ? 0 : getResources().getDimensionPixelSize(statusBarResource);',
+        '        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, windowInsets) -> {',
+        '            androidx.core.graphics.Insets safeInsets = windowInsets.getInsets(',
+        '                WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());',
+        '            int topInset = Math.max(safeInsets.top, statusBarFallback);',
+        '            ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) webView.getLayoutParams();',
+        '            margins.setMargins(initialLeft + safeInsets.left, initialTop + topInset,',
         '                initialRight + safeInsets.right, initialBottom + safeInsets.bottom);',
+        '            webView.setLayoutParams(margins);',
         '            return windowInsets;',
         '        });',
+        '        ViewCompat.requestApplyInsets(webView);',
+        '        webView.post(() -> ViewCompat.requestApplyInsets(webView));',
         '        ViewCompat.requestApplyInsets(decorView);',
         '    }'
     ].join('\n');

@@ -61,29 +61,30 @@ class AndroidFS {
         } catch (_) { return false; }
     }
     
-    public static async NewFile (fileName: string, fileContent: string): Promise<string | false> {
+    public static async NewFile (defaultFileName: string, fileContent: string): Promise<string | false> {
         try {
-            const blob = new Blob([fileContent], {type: defaultMimeType});
-            const uri = await cordova.plugins.saveDialog.getFileUri(blob, fileName);
-            await cordova.plugins.saveDialog.saveFileByUri(blob, uri);
-            let stableUri = uri;
-            try {
-                const selectedFolder = await this.selectVaultFolder();
-                const file = selectedFolder.files.find(candidate => candidate.name === fileName);
-                if (file) {
-                    stableUri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(file.relativePath);
-                    this.saveTreeGrant(stableUri, selectedFolder.treeUri, file.relativePath);
-                } else {
-                    alert(Localization.text('file.folderGrantSkipped'));
-                }
-            } catch (_) {
-                alert(Localization.text('file.folderGrantSkipped'));
-            }
-            window.localStorage.setItem(stableUri,fileContent);//backup
+            const enteredName = window.prompt(Localization.text('file.newVaultName'), defaultFileName);
+            if (enteredName === null) return false;
+            let fileName = enteredName.trim();
+            if (!fileName || /[\\/\u0000-\u001f]/.test(fileName))
+                throw new Error(Localization.text('file.invalidVaultName'));
+            if (!/\.json$/i.test(fileName)) fileName += '.json';
+            const selectedFolder = await this.selectVaultFolder();
+            await new Promise<void>((resolve, reject) => (cordova.exec as any)(
+                () => resolve(), reject, 'Chooser', 'createFileInTree', [selectedFolder.treeUri, fileName, fileContent]
+            ));
+            const stableUri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(fileName);
+            this.saveTreeGrant(stableUri, selectedFolder.treeUri, fileName);
+            const savedContent = await this.ReadFile(stableUri);
+            if (savedContent === false || savedContent.replace(/\s+$/, '') !== fileContent)
+                throw new Error('Il vault è stato creato ma la verifica della scrittura non è riuscita.');
+            window.localStorage.setItem(stableUri, fileContent);// encrypted-vault recovery copy
             return stableUri;
         }
         catch (e) {
-            return CommonHelpers.StandardError(e);
+            console.error('Android vault creation failed', e);
+            alert(e instanceof Error ? e.message : String(e));
+            return false;
         }
     }
 
@@ -99,7 +100,8 @@ class AndroidFS {
             if (uri_content === false && uri_bk_content === null)
                 window.localStorage.setItem(uri, fileContent);
             await cordova.plugins.saveDialog.saveFileByUri(blob, liveUri);
-            return true;
+            const savedContent = await this.ReadFile(uri);
+            return savedContent !== false && savedContent.replace(/\s+$/, '') === fileContent;
         }
         catch (e) {
             return CommonHelpers.StandardError(e);
@@ -131,7 +133,9 @@ class AndroidFS {
             });
         }
         catch (e) {
-            return CommonHelpers.StandardError(e);
+            console.error('Android vault folder selection failed', e);
+            alert(e instanceof Error ? e.message : String(e));
+            return false;
         }
     }
 

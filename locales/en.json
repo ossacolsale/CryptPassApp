@@ -18,7 +18,8 @@
   "main.password": "Type password",
   "main.restore": "Restore options",
   "main.wrongPassword": "Wrong password!",
-  "main.unlockError": "The wallet could not be unlocked. Check the selected file and recovery sequence.",
+  "main.unlockError": "The password is correct, but the encrypted wallet entries cannot be read. The file may be incomplete, damaged, or belong to a different wallet.",
+  "main.unlockLegacyError": "This vault uses a legacy format, where this check cannot reliably verify the password and sequence. Confirm the sequence belongs to this exact file. Conversion to v2 happens only after a successful unlock and save.",
   "main.accessError": "Unable to access the encrypted wallet. Check its file and secure storage.",
   "main.manageWallets": "Manage wallets",
   "other.title": "Other options",
@@ -337,5 +338,7 @@
   "ui.sequenceIncomplete": "You must complete typing the entire sequence!",
   "ui.localeFailure": "Localization resources could not be loaded.",
   "preferences.loadError": "Unable to load preferences. Please retry.",
-  "wallet.defaultName": "My wallet"
+  "wallet.defaultName": "My wallet",
+  "file.newVaultName": "Choose a file name for the new vault:",
+  "file.invalidVaultName": "The file name is empty or contains characters Android does not allow."
 }

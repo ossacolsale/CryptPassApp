@@ -168,7 +168,13 @@ class MainView extends View {
                     pwdCorrect = await this._aa.Unlock(pwd);
                 } catch (error) {
                     console.error('Wallet unlock failed', error);
-                    alert(Localization.text('main.unlockError'));
+                    const diagnostic = error instanceof Error ? error.message.split('|') : [];
+                    const isLegacy = diagnostic.length > 1 && diagnostic[0] === 'UNLOCK_DIAG' && diagnostic[1] === 'legacy';
+                    const message = isLegacy ? 'main.unlockLegacyError' : 'main.unlockError';
+                    const details = diagnostic.length === 5 && diagnostic[0] === 'UNLOCK_DIAG'
+                        ? `\n\nDiagnostica: vault=${diagnostic[1]}, voci=${diagnostic[2]}, cifrato=${diagnostic[3]} caratteri, errore=${diagnostic[4]}.`
+                        : '';
+                    alert(Localization.text(message) + details);
                     return false;
                 }
                 if (pwdCorrect) {
