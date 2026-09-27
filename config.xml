@@ -15,7 +15,7 @@
     <platform name="android">
         <preference name="AndroidEdgeToEdge" value="true" />
         <preference name="AndroidWindowSplashScreenAnimatedIcon" value="www/img/cp-512.png" />
-        <preference name="android-minSdkVersion" value="22" />
+        <preference name="android-minSdkVersion" value="24" />
         <preference name="android-targetSdkVersion" value="36" />
         <preference name="android-compileSdkVersion" value="36" />
         <preference name="AndroidPersistentFileLocation" value="Compatibility" />
