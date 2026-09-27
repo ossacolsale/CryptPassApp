@@ -355,7 +355,14 @@ var _a;
 class Config {
     static ConfigInit() {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.setConfig(this.defaultConfig);
+            try {
+                yield WalletProfiles.initialize();
+                return (yield this.getConfig()) !== false;
+            }
+            catch (error) {
+                console.error('Could not initialize wallet configuration', error);
+                return false;
+            }
         });
     }
     static readData() {
@@ -605,14 +612,8 @@ class ConfigActions {
     }
     getStatus() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!LocalStorage.InitializedKey()) {
-                const init = yield Config.ConfigInit();
-                if (init) {
-                    LocalStorage.InitializedKeySet();
-                    return 'KO';
-                }
+            if (!(yield Config.ConfigInit()))
                 return 'FatalError';
-            }
             const status = yield Config.getStatus();
             if (status == 'OK')
                 yield this.InitCryptPassConfig();
@@ -907,6 +908,7 @@ class ScenarioController {
             scenario: this._currentScenario,
             markup: app.innerHTML,
             controls: controls,
+            buttonLabels: Array.from(app.querySelectorAll('button[id]')).map(button => ({ id: button.id, text: button.textContent || '' })),
             scrollX: window.scrollX,
             scrollY: window.scrollY,
             focusedId: active && app.contains(active) ? active.id : undefined
@@ -935,6 +937,8 @@ class ScenarioController {
                 control.value = state.value;
             if (control instanceof HTMLInputElement && state.checked !== undefined)
                 control.checked = state.checked;
+            if (control instanceof HTMLInputElement && state.type !== undefined)
+                control.type = state.type;
             if (control instanceof HTMLSelectElement && state.selectedIndex !== undefined)
                 control.selectedIndex = state.selectedIndex;
             if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) && state.selectionStart !== undefined && state.selectionStart !== null) {
@@ -943,6 +947,11 @@ class ScenarioController {
                 }
                 catch (_) { }
             }
+        });
+        snapshot.buttonLabels.forEach(state => {
+            const button = document.getElementById(state.id);
+            if (button)
+                button.textContent = state.text;
         });
         this.lockedSnapshot = undefined;
         window.requestAnimationFrame(() => {
@@ -1366,12 +1375,6 @@ class LocalStorage {
     static FirstTimeSet() {
         this._Set('firstTime', this.firsttime);
     }
-    static InitializedKey() {
-        return this._Get('Initialized') !== null;
-    }
-    static InitializedKeySet() {
-        this._Set('Initialized', this.initialized);
-    }
     static PasswordExpirationTime() {
         const ped = this._Get('PasswordExpirationTime');
         return ped == null ? 0 : parseInt(ped);
@@ -1389,7 +1392,6 @@ class LocalStorage {
             this._Set('AutoLockTimeoutSeconds', value.toString());
     }
 }
-LocalStorage.initialized = '1';
 LocalStorage.firsttime = '0';
 LocalStorage.passwordexpirationdays = 30;
 let androidSecureStorage;
@@ -1989,7 +1991,7 @@ class MainView extends View {
                 alert(Localization.text('main.wrongPassword'));
                 return false;
             }), (res) => { if (!res)
-                this.focusPassword(true); });
+                this.focusPassword(true, true); });
         });
     }
     showUnlockDiagnostic(message, diagnostic) {
@@ -2035,8 +2037,31 @@ class MainView extends View {
         app.appendChild(panel);
         panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-    focusPassword(select) {
-        this.focusEl(this.IdPassword1, select);
+    focusPassword(select, reset = false) {
+        window.requestAnimationFrame(() => window.setTimeout(() => {
+            let input = this.getEl(this.IdPassword1);
+            if (!input)
+                return;
+            if (reset) {
+                const replacement = input.cloneNode(false);
+                replacement.type = 'password';
+                replacement.value = '';
+                replacement.disabled = false;
+                replacement.readOnly = false;
+                input.replaceWith(replacement);
+                input = replacement;
+            }
+            input.disabled = false;
+            input.readOnly = false;
+            input.focus({ preventScroll: true });
+            try {
+                if (select)
+                    input.select();
+                else
+                    input.setSelectionRange(input.value.length, input.value.length);
+            }
+            catch (_) { }
+        }, 0));
         DeviceAuth.showKeyboard();
     }
     handleDontChPwd() {
@@ -2427,9 +2452,10 @@ class PassView extends View {
             return queryTokens.every(token => {
                 if (token.length <= 3)
                     return searchable.includes(token);
-                const maxLength = Math.max(...words.map(word => word.length), token.length);
-                const threshold = Math.max(0.72, 1 - 1 / maxLength);
-                return words.some(word => this.editSimilarity(token, word) >= threshold);
+                return words.some(word => {
+                    const threshold = Math.max(0.72, 1 - 1 / Math.max(token.length, word.length));
+                    return this.editSimilarity(token, word) >= threshold;
+                });
             });
         });
     }
@@ -2940,6 +2966,7 @@ class RestoreView extends View {
         this.IdMaintainSequence = 'MaintainSequence';
         this.IdInsertSequence = 'InsertSequence';
         this.IdFileUriP = 'FileUriP';
+        this.IdSelectedFileName = 'SelectedFileName';
         this.IdFolderPrompt = 'VaultFolderPrompt';
         this.fileCandidates = [];
         this.IdSequenceP = 'SequenceP';
@@ -3053,15 +3080,28 @@ class RestoreView extends View {
                     break;
                 case 'chooseFile':
                     const files = yield Config.selectKeyPassFiles();
-                    this.showEl(this.IdFolderPrompt);
+                    if (cordova.platformId === 'electron')
+                        this.getEl(this.IdFolderPrompt).classList.add('d-none');
+                    else
+                        this.showEl(this.IdFolderPrompt);
                     this.showEl(this.IdFileUriP);
                     this.fileCandidates = files === false ? [] : files;
                     const select = this.getEl(this.IdFileUri);
+                    const selectedName = this.getEl(this.IdSelectedFileName);
                     select.replaceChildren(new Option(this.DefaultNoFile, ''));
+                    select.classList.remove('d-none');
+                    selectedName.classList.add('d-none');
+                    selectedName.textContent = '';
                     this.fileCandidates.forEach(file => {
                         const option = new Option(file.name, file.uri);
                         select.add(option);
                     });
+                    if (cordova.platformId === 'electron' && this.fileCandidates.length === 1) {
+                        select.value = this.fileCandidates[0].uri;
+                        select.classList.add('d-none');
+                        selectedName.textContent = this.fileCandidates[0].name;
+                        selectedName.classList.remove('d-none');
+                    }
                     this.displayConfirm();
                     break;
                 case 'maintainSequence':
@@ -3207,8 +3247,8 @@ class RestoreView extends View {
                     <label class="btn btn-outline-primary" for="${this.IdChooseFile}">Choose new file</label>
                 </div>
 
-                <p id="${this.IdFolderPrompt}"${mustPickFile ? '' : ' class="d-none"'}>${Localization.text('file.chooseFolderPrompt')}</p>
-                <p id="${this.IdFileUriP}"${mustPickFile ? '' : ' class="d-none"'}>New file: <select class="form-select" id="${this.IdFileUri}"><option value="">${ViewHelpers.escapeHtmlText(this.DefaultNoFile)}</option></select></p>
+                <p id="${this.IdFolderPrompt}"${mustPickFile && cordova.platformId !== 'electron' ? '' : ' class="d-none"'}>${Localization.text('file.chooseFolderPrompt')}</p>
+                <p id="${this.IdFileUriP}"${mustPickFile ? '' : ' class="d-none"'}>New file: <span id="${this.IdSelectedFileName}" class="d-none"></span><select class="form-select" id="${this.IdFileUri}"><option value="">${ViewHelpers.escapeHtmlText(this.DefaultNoFile)}</option></select></p>
 
                 <div class="mt-2 btn-group" role="group"${mustInsertSequence ? ' class="d-none"' : ''}>
                     <span${mustInsertSequence ? ' class="d-none"' : ''}><input type="radio" class="btn-check" name="btnradio1" id="${this.IdMaintainSequence}" autocomplete="off"${mustInsertSequence ? '' : ' checked="checked"'}>

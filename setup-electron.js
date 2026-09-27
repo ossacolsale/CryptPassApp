@@ -11,24 +11,21 @@ const mainAppend = `
 const { safeStorage, dialog } = require('electron');
 const crypto = require('crypto');
 const cryptPassVaults = new Map();
-const cryptPassSecureFile = path.join(app.getPath('userData'), 'cryptpass-secure.bin');
+let cryptPassSecureFile;
 let cryptPassSecureValues = { values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} };
-let cryptPassReady = Promise.resolve().then(() => {
-    try {
-        if (fs.existsSync(cryptPassSecureFile) && cryptPassHasStrongStorage()) {
-            const encrypted = fs.readFileSync(cryptPassSecureFile);
-            cryptPassSecureValues = JSON.parse(safeStorage.decryptString(encrypted));
-            if (!cryptPassSecureValues || typeof cryptPassSecureValues !== 'object') throw new Error('invalid store');
-            cryptPassSecureValues.values = cryptPassSecureValues.values || { cryptPassCfg: null, cryptPassWalletProfiles: null };
-            cryptPassSecureValues.vaults = cryptPassSecureValues.vaults || {};
-            for (const [id, filePath] of Object.entries(cryptPassSecureValues.vaults)) cryptPassVaults.set(id, filePath);
-        }
-    } catch (_) {
-        cryptPassSecureValues = { values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} };
-        throw new Error('Secure storage unavailable or unreadable');
+let cryptPassReady = app.whenReady().then(() => {
+    cryptPassSecureFile = path.join(app.getPath('userData'), 'cryptpass-secure.bin');
+    if (!fs.existsSync(cryptPassSecureFile)) return;
+    if (!cryptPassHasStrongStorage()) throw new Error('Secure storage unavailable');
+    const encrypted = fs.readFileSync(cryptPassSecureFile);
+    const restored = JSON.parse(safeStorage.decryptString(encrypted));
+    if (!restored || typeof restored !== 'object' || !restored.values || typeof restored.values !== 'object' ||
+        !restored.vaults || typeof restored.vaults !== 'object' ||
+        Object.values(restored.vaults).some(filePath => typeof filePath !== 'string')) {
+        throw new Error('Secure storage data is invalid');
     }
-    if (!cryptPassSecureValues.values) cryptPassSecureValues = { values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} };
-    if (!cryptPassSecureValues.vaults) cryptPassSecureValues.vaults = {};
+    cryptPassSecureValues = restored;
+    for (const [id, filePath] of Object.entries(cryptPassSecureValues.vaults)) cryptPassVaults.set(id, filePath);
 });
 
 function cryptPassHasStrongStorage() {

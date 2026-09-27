@@ -24,8 +24,16 @@ class Config {
                                                     Sequence: '{"Sequence": []}',
                                                     Preferences: this.defaultPreferences};
 
-    public static async ConfigInit() {
-        return this.setConfig(this.defaultConfig);
+    public static async ConfigInit(): Promise<boolean> {
+        try {
+            // Initialize/migrate only when needed. Re-running this at startup must never
+            // replace a saved wallet with the empty defaults.
+            await WalletProfiles.initialize();
+            return await this.getConfig() !== false;
+        } catch (error) {
+            console.error('Could not initialize wallet configuration', error);
+            return false;
+        }
     }
 
     public static async readData(): Promise<{kp: {}, se: {}}> {

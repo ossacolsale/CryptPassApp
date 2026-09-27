@@ -162,9 +162,10 @@ class PassView extends View implements ViewModel {
             const words = searchable.split(/[^a-z0-9]+/).filter(Boolean);
             return queryTokens.every(token => {
                 if (token.length <= 3) return searchable.includes(token);
-                const maxLength = Math.max(...words.map(word => word.length), token.length);
-                const threshold = Math.max(0.72, 1 - 1 / maxLength);
-                return words.some(word => this.editSimilarity(token, word) >= threshold);
+                return words.some(word => {
+                    const threshold = Math.max(0.72, 1 - 1 / Math.max(token.length, word.length));
+                    return this.editSimilarity(token, word) >= threshold;
+                });
             });
         });
     }

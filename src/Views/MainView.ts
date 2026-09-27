@@ -185,7 +185,7 @@ class MainView extends View {
                 }
                 alert(Localization.text('main.wrongPassword'));
                 return false;
-            }, (res) => { if (!res) this.focusPassword(true); }
+            }, (res) => { if (!res) this.focusPassword(true, true); }
         );
     }
 
@@ -234,8 +234,27 @@ class MainView extends View {
         panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    private focusPassword(select: boolean): void {
-        this.focusEl(this.IdPassword1, select);
+    private focusPassword(select: boolean, reset: boolean = false): void {
+        window.requestAnimationFrame(() => window.setTimeout(() => {
+            let input = this.getEl(this.IdPassword1) as HTMLInputElement | null;
+            if (!input) return;
+            if (reset) {
+                const replacement = input.cloneNode(false) as HTMLInputElement;
+                replacement.type = 'password';
+                replacement.value = '';
+                replacement.disabled = false;
+                replacement.readOnly = false;
+                input.replaceWith(replacement);
+                input = replacement;
+            }
+            input.disabled = false;
+            input.readOnly = false;
+            input.focus({ preventScroll: true });
+            try {
+                if (select) input.select();
+                else input.setSelectionRange(input.value.length, input.value.length);
+            } catch (_) { /* Some embedded Chromium input types do not support selection ranges. */ }
+        }, 0));
         DeviceAuth.showKeyboard();
     }
 

@@ -48,6 +48,7 @@ class RestoreView extends View implements ViewModel {
     protected readonly IdMaintainSequence : string = 'MaintainSequence';
     protected readonly IdInsertSequence : string = 'InsertSequence';
     protected readonly IdFileUriP : string = 'FileUriP';
+    protected readonly IdSelectedFileName : string = 'SelectedFileName';
     protected readonly IdFolderPrompt : string = 'VaultFolderPrompt';
     protected fileCandidates: Array<{ uri: string; name: string }> = [];
     protected readonly IdSequenceP : string = 'SequenceP';
@@ -158,15 +159,26 @@ class RestoreView extends View implements ViewModel {
             break;
             case 'chooseFile':
                 const files = await Config.selectKeyPassFiles();
-                this.showEl(this.IdFolderPrompt);
+                if (cordova.platformId === 'electron') this.getEl(this.IdFolderPrompt).classList.add('d-none');
+                else this.showEl(this.IdFolderPrompt);
                 this.showEl(this.IdFileUriP);
                 this.fileCandidates = files === false ? [] : files;
                 const select = this.getEl(this.IdFileUri) as HTMLSelectElement;
+                const selectedName = this.getEl(this.IdSelectedFileName);
                 select.replaceChildren(new Option(this.DefaultNoFile, ''));
+                select.classList.remove('d-none');
+                selectedName.classList.add('d-none');
+                selectedName.textContent = '';
                 this.fileCandidates.forEach(file => {
                     const option = new Option(file.name, file.uri);
                     select.add(option);
                 });
+                if (cordova.platformId === 'electron' && this.fileCandidates.length === 1) {
+                    select.value = this.fileCandidates[0].uri;
+                    select.classList.add('d-none');
+                    selectedName.textContent = this.fileCandidates[0].name;
+                    selectedName.classList.remove('d-none');
+                }
                 this.displayConfirm();
             break;
             case 'maintainSequence':
@@ -309,8 +321,8 @@ class RestoreView extends View implements ViewModel {
                     <label class="btn btn-outline-primary" for="${this.IdChooseFile}">Choose new file</label>
                 </div>
 
-                <p id="${this.IdFolderPrompt}"${mustPickFile?'':' class="d-none"'}>${Localization.text('file.chooseFolderPrompt')}</p>
-                <p id="${this.IdFileUriP}"${mustPickFile?'':' class="d-none"'}>New file: <select class="form-select" id="${this.IdFileUri}"><option value="">${ViewHelpers.escapeHtmlText(this.DefaultNoFile)}</option></select></p>
+                <p id="${this.IdFolderPrompt}"${mustPickFile && cordova.platformId !== 'electron' ? '' : ' class="d-none"'}>${Localization.text('file.chooseFolderPrompt')}</p>
+                <p id="${this.IdFileUriP}"${mustPickFile?'':' class="d-none"'}>New file: <span id="${this.IdSelectedFileName}" class="d-none"></span><select class="form-select" id="${this.IdFileUri}"><option value="">${ViewHelpers.escapeHtmlText(this.DefaultNoFile)}</option></select></p>
 
                 <div class="mt-2 btn-group" role="group"${mustInsertSequence?' class="d-none"':''}>
                     <span${mustInsertSequence?' class="d-none"':''}><input type="radio" class="btn-check" name="btnradio1" id="${this.IdMaintainSequence}" autocomplete="off"${mustInsertSequence?'':' checked="checked"'}>

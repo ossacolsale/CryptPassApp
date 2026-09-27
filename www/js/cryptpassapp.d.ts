@@ -172,6 +172,10 @@ interface LockedScenarioSnapshot {
     scenario: ViewModel;
     markup: string;
     controls: LockedControlState[];
+    buttonLabels: Array<{
+        id: string;
+        text: string;
+    }>;
     scrollX: number;
     scrollY: number;
     focusedId?: string;
@@ -257,9 +261,8 @@ declare class FS {
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
-type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime' | 'AutoLockTimeoutSeconds';
+type LocalStorageKeys = 'firstTime' | 'PasswordExpirationTime' | 'AutoLockTimeoutSeconds';
 declare class LocalStorage {
-    protected static readonly initialized: string;
     protected static readonly firsttime: string;
     protected static readonly passwordexpirationdays: number;
     protected static _Set(key: LocalStorageKeys, val: string): void;
@@ -267,8 +270,6 @@ declare class LocalStorage {
     protected static _Del(key: LocalStorageKeys): void;
     static FirstTime(): boolean;
     static FirstTimeSet(): void;
-    static InitializedKey(): boolean;
-    static InitializedKeySet(): void;
     static PasswordExpirationTime(): number;
     static PasswordExpirationTimeSet(): void;
     static AutoLockTimeoutSeconds(): number;
@@ -552,6 +553,7 @@ declare class RestoreView extends View implements ViewModel {
     protected readonly IdMaintainSequence: string;
     protected readonly IdInsertSequence: string;
     protected readonly IdFileUriP: string;
+    protected readonly IdSelectedFileName: string;
     protected readonly IdFolderPrompt: string;
     protected fileCandidates: Array<{
         uri: string;

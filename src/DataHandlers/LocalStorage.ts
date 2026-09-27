@@ -1,8 +1,7 @@
-type LocalStorageKeys = 'firstTime' | 'Initialized' | 'PasswordExpirationTime' | 'AutoLockTimeoutSeconds';
+type LocalStorageKeys = 'firstTime' | 'PasswordExpirationTime' | 'AutoLockTimeoutSeconds';
 
 class LocalStorage {
 
-    protected static readonly initialized: string = '1';
     protected static readonly firsttime: string = '0';
     protected static readonly passwordexpirationdays: number = 30;
 
@@ -26,13 +25,6 @@ class LocalStorage {
         this._Set('firstTime',this.firsttime);
     }
 
-    public static InitializedKey(): boolean {
-        return this._Get('Initialized') !== null;
-    }
-
-    public static InitializedKeySet() {
-        this._Set('Initialized',this.initialized);
-    }
 
     public static PasswordExpirationTime(): number {
         const ped = this._Get('PasswordExpirationTime');

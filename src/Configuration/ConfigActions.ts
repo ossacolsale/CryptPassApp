@@ -83,14 +83,7 @@ class ConfigActions {
     }
 
     public async getStatus (): Promise<ConfigStatus> {
-        if (!LocalStorage.InitializedKey()) {
-            const init = await Config.ConfigInit();
-            if (init) {
-                LocalStorage.InitializedKeySet();
-                return 'KO';
-            } 
-            return 'FatalError';
-        }
+        if (!await Config.ConfigInit()) return 'FatalError';
         const status = await Config.getStatus();
         if (status == 'OK')
             await this.InitCryptPassConfig();

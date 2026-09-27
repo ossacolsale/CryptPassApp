@@ -12,6 +12,7 @@ interface LockedScenarioSnapshot {
     scenario: ViewModel;
     markup: string;
     controls: LockedControlState[];
+    buttonLabels: Array<{ id: string; text: string }> ;
     scrollX: number;
     scrollY: number;
     focusedId?: string;
@@ -56,6 +57,7 @@ class ScenarioController {
             scenario: this._currentScenario,
             markup: app.innerHTML,
             controls: controls,
+            buttonLabels: Array.from(app.querySelectorAll('button[id]')).map(button => ({ id: button.id, text: button.textContent || '' })),
             scrollX: window.scrollX,
             scrollY: window.scrollY,
             focusedId: active && app.contains(active) ? active.id : undefined
@@ -80,10 +82,15 @@ class ScenarioController {
             if (!control) return;
             if (state.value !== undefined) control.value = state.value;
             if (control instanceof HTMLInputElement && state.checked !== undefined) control.checked = state.checked;
+            if (control instanceof HTMLInputElement && state.type !== undefined) control.type = state.type;
             if (control instanceof HTMLSelectElement && state.selectedIndex !== undefined) control.selectedIndex = state.selectedIndex;
             if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) && state.selectionStart !== undefined && state.selectionStart !== null) {
                 try { control.setSelectionRange(state.selectionStart, state.selectionEnd == null ? state.selectionStart : state.selectionEnd); } catch (_) { /* Selection is optional. */ }
             }
+        });
+        snapshot.buttonLabels.forEach(state => {
+            const button = document.getElementById(state.id);
+            if (button) button.textContent = state.text;
         });
         this.lockedSnapshot = undefined;
         window.requestAnimationFrame(() => {
