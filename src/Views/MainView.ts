@@ -183,9 +183,21 @@ class MainView extends View {
                     if (!ScenarioController.restoreLockedScenario()) await this.Init();
                     return true;
                 }
-                alert(Localization.text('main.wrongPassword'));
+                if (cordova.platformId === 'electron') {
+                    const form = this.getEl(this.IdUnlockForm);
+                    form.querySelector('#UnlockPasswordError')?.remove();
+                    const message = document.createElement('div');
+                    message.id = 'UnlockPasswordError';
+                    message.className = 'alert alert-warning';
+                    message.setAttribute('role', 'alert');
+                    message.textContent = Localization.text('main.wrongPassword');
+                    form.prepend(message);
+                    (this.getEl(this.IdPassword1) as HTMLInputElement).value = '';
+                } else {
+                    alert(Localization.text('main.wrongPassword'));
+                }
                 return false;
-            }, (res) => { if (!res) this.focusPassword(true, true); }
+            }, (res) => { if (!res) this.focusPassword(true, cordova.platformId === 'electron'); }
         );
     }
 
@@ -235,13 +247,23 @@ class MainView extends View {
     }
 
     private focusPassword(select: boolean, reset: boolean = false): void {
+        if (cordova.platformId !== 'electron') {
+            this.focusEl(this.IdPassword1, select);
+            DeviceAuth.showKeyboard();
+            return;
+        }
+
         window.requestAnimationFrame(() => window.setTimeout(() => {
             let input = this.getEl(this.IdPassword1) as HTMLInputElement | null;
             if (!input) return;
             if (reset) {
-                const replacement = input.cloneNode(false) as HTMLInputElement;
+                // A fresh DOM node clears Chromium's stale editing/focus state after the modal alert.
+                const replacement = document.createElement('input');
                 replacement.type = 'password';
-                replacement.value = '';
+                replacement.id = input.id;
+                replacement.className = input.className;
+                replacement.placeholder = input.placeholder;
+                replacement.autocomplete = 'current-password';
                 replacement.disabled = false;
                 replacement.readOnly = false;
                 input.replaceWith(replacement);
@@ -250,12 +272,8 @@ class MainView extends View {
             input.disabled = false;
             input.readOnly = false;
             input.focus({ preventScroll: true });
-            try {
-                if (select) input.select();
-                else input.setSelectionRange(input.value.length, input.value.length);
-            } catch (_) { /* Some embedded Chromium input types do not support selection ranges. */ }
+            if (select) input.select();
         }, 0));
-        DeviceAuth.showKeyboard();
     }
 
     protected handleDontChPwd() {

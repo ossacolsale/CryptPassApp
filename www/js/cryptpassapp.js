@@ -1411,17 +1411,20 @@ function getAndroidSecureStorage() {
 class SecureStorage {
     static getVal(key) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b;
+            var _a, _b, _c;
             try {
                 switch (cordova.platformId) {
                     case 'electron': {
-                        const val = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureGet(key));
+                        const status = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureStorageStatus());
+                        if (!status || status.ready !== true)
+                            throw new Error('Electron secure storage is not ready');
+                        const val = yield ((_b = window.cryptPassDesktop) === null || _b === void 0 ? void 0 : _b.secureGet(key));
                         if (val !== false && val !== undefined)
                             return val;
                         const legacy = window.localStorage.getItem(key);
                         if (legacy === null)
                             return false;
-                        const saved = yield ((_b = window.cryptPassDesktop) === null || _b === void 0 ? void 0 : _b.secureSet(key, legacy));
+                        const saved = yield ((_c = window.cryptPassDesktop) === null || _c === void 0 ? void 0 : _c.secureSet(key, legacy));
                         if (saved === false || saved === undefined)
                             return false;
                         window.localStorage.removeItem(key);
@@ -1960,6 +1963,7 @@ class MainView extends View {
     handlePwd() {
         return __awaiter(this, void 0, void 0, function* () {
             yield this.LoaderShowAsync(() => __awaiter(this, void 0, void 0, function* () {
+                var _a;
                 const pwd = this.getEl(this.IdPassword1).value;
                 if (pwd.length < 10) {
                     alert(Localization.text('main.wrongPassword'));
@@ -1988,10 +1992,23 @@ class MainView extends View {
                         yield this.Init();
                     return true;
                 }
-                alert(Localization.text('main.wrongPassword'));
+                if (cordova.platformId === 'electron') {
+                    const form = this.getEl(this.IdUnlockForm);
+                    (_a = form.querySelector('#UnlockPasswordError')) === null || _a === void 0 ? void 0 : _a.remove();
+                    const message = document.createElement('div');
+                    message.id = 'UnlockPasswordError';
+                    message.className = 'alert alert-warning';
+                    message.setAttribute('role', 'alert');
+                    message.textContent = Localization.text('main.wrongPassword');
+                    form.prepend(message);
+                    this.getEl(this.IdPassword1).value = '';
+                }
+                else {
+                    alert(Localization.text('main.wrongPassword'));
+                }
                 return false;
             }), (res) => { if (!res)
-                this.focusPassword(true, true); });
+                this.focusPassword(true, cordova.platformId === 'electron'); });
         });
     }
     showUnlockDiagnostic(message, diagnostic) {
@@ -2038,14 +2055,22 @@ class MainView extends View {
         panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
     focusPassword(select, reset = false) {
+        if (cordova.platformId !== 'electron') {
+            this.focusEl(this.IdPassword1, select);
+            DeviceAuth.showKeyboard();
+            return;
+        }
         window.requestAnimationFrame(() => window.setTimeout(() => {
             let input = this.getEl(this.IdPassword1);
             if (!input)
                 return;
             if (reset) {
-                const replacement = input.cloneNode(false);
+                const replacement = document.createElement('input');
                 replacement.type = 'password';
-                replacement.value = '';
+                replacement.id = input.id;
+                replacement.className = input.className;
+                replacement.placeholder = input.placeholder;
+                replacement.autocomplete = 'current-password';
                 replacement.disabled = false;
                 replacement.readOnly = false;
                 input.replaceWith(replacement);
@@ -2054,15 +2079,9 @@ class MainView extends View {
             input.disabled = false;
             input.readOnly = false;
             input.focus({ preventScroll: true });
-            try {
-                if (select)
-                    input.select();
-                else
-                    input.setSelectionRange(input.value.length, input.value.length);
-            }
-            catch (_) { }
+            if (select)
+                input.select();
         }, 0));
-        DeviceAuth.showKeyboard();
     }
     handleDontChPwd() {
         LocalStorage.PasswordExpirationTimeSet();

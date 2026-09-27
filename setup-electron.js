@@ -98,10 +98,14 @@ cryptPassHandle('cryptpass:saveVault', async (handle, content) => {
     if (!filePath || typeof content !== 'string') return false;
     return cryptPassWriteAtomically(filePath, content);
 });
-cryptPassHandle('cryptpass:secureStorageStatus', async () => ({
-    available: safeStorage.isEncryptionAvailable(),
-    backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform
-}));
+cryptPassHandle('cryptpass:secureStorageStatus', async () => {
+    await cryptPassReady;
+    return {
+        ready: true,
+        available: safeStorage.isEncryptionAvailable(),
+        backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform
+    };
+});
 cryptPassHandle('cryptpass:secureGet', async (key) => {
     await cryptPassReady;
     return ['cryptPassCfg', 'cryptPassWalletProfiles'].includes(key) ? (cryptPassSecureValues.values[key] || false) : false;
@@ -167,8 +171,13 @@ try {
     else main = main.slice(0, mainAppendStart) + mainAppend;
     preload = preload.replace(/\ncontextBridge\.exposeInMainWorld\('cryptPassDesktop',[\s\S]*?\n\}\);\s*/, '\n');
     preload += preloadAppend;
-    fs.writeFileSync(mainPath, main);
-    fs.writeFileSync(preloadPath, preload);
+    // Cordova's Electron builder packages platforms/electron/www, while the
+    // after_prepare hook runs against platform_www. Keep both generated copies in sync.
+    for (const directory of [platformDir, path.join(__dirname, 'platforms/electron/www')]) {
+        if (!fs.existsSync(directory)) continue;
+        fs.writeFileSync(path.join(directory, 'cdv-electron-main.js'), main);
+        fs.writeFileSync(path.join(directory, 'cdv-electron-preload.js'), preload);
+    }
     console.log('Electron security boundary configured');
 } catch (error) {
     console.error('Electron configuration failed');

@@ -1,18 +1,12 @@
 {
   "electron": {
     "linux": {
-      "package": [
-        "deb"
-      ],
-      "arch": [
-        "x64"
-      ]
+      "package": ["deb", "zip"],
+      "arch": ["x64"]
     },
     "windows": {
-      "package": [],
-      "arch": [
-        "x64"
-      ]
+      "package": ["nsis", "zip"],
+      "arch": ["x64"]
     }
   }
 }

@@ -27,6 +27,10 @@ class SecureStorage {
         try {
             switch (cordova.platformId) {
                 case 'electron': {
+                    // A failed/deferred main-process store must never look like a missing key:
+                    // otherwise startup could migrate stale renderer data over the vault state.
+                    const status = await window.cryptPassDesktop?.secureStorageStatus();
+                    if (!status || status.ready !== true) throw new Error('Electron secure storage is not ready');
                     const val = await window.cryptPassDesktop?.secureGet(key);
                     if (val !== false && val !== undefined) return val;
                     // One-time migration from the former renderer localStorage implementation.
