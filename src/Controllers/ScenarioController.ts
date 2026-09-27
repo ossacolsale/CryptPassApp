@@ -82,7 +82,7 @@ class ScenarioController {
             if (control instanceof HTMLInputElement && state.checked !== undefined) control.checked = state.checked;
             if (control instanceof HTMLSelectElement && state.selectedIndex !== undefined) control.selectedIndex = state.selectedIndex;
             if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) && state.selectionStart !== undefined && state.selectionStart !== null) {
-                try { control.setSelectionRange(state.selectionStart, state.selectionEnd === null ? state.selectionStart : state.selectionEnd); } catch (_) { /* Selection is optional. */ }
+                try { control.setSelectionRange(state.selectionStart, state.selectionEnd == null ? state.selectionStart : state.selectionEnd); } catch (_) { /* Selection is optional. */ }
             }
         });
         this.lockedSnapshot = undefined;

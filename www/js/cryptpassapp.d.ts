@@ -2,7 +2,6 @@ declare class State {
     private static __K_;
     static get K(): string;
     static set K(value: string);
-    static UnlockWriteProbe: string;
     private static __Password_;
     static get Password(): string;
     static set Password(value: string);
@@ -14,6 +13,10 @@ declare class State {
     static set EntriesManage(em: EntriesManage | null);
     static logout(preserveDeviceUnlock?: boolean): void;
 }
+declare let keyboardFocusedElement: HTMLElement | null;
+declare let keyboardScrollTimer: number | undefined;
+declare function keepFocusedControlVisible(): void;
+declare function initializeKeyboardViewport(): void;
 declare class AutoLock {
     private static readonly clipboardClearMs;
     private static inactivityTimer;
@@ -80,16 +83,6 @@ declare class Config {
     static writeSequence(seq: {}): Promise<boolean>;
     protected static getKeyPassPath(): Promise<string | false>;
     static readKeyPass(): Promise<{} | false>;
-    static probeVaultWriteOnce(): Promise<{
-        status: string;
-        originalChars: number | null;
-        expectedChars: number | null;
-        actualChars: number | null;
-        writeVerified: boolean;
-        restored: boolean | null;
-        reused?: boolean;
-        failureType?: string;
-    }>;
     static writeKeyPass(kp: {}): Promise<boolean>;
     static newKeyPass(kp?: {}): Promise<boolean>;
     static selectKeyPassFiles(): Promise<Array<{
@@ -166,13 +159,34 @@ declare class EventsController {
     static eventCatcher(e: Event): Promise<void>;
     static Initialize(): void;
 }
+interface LockedControlState {
+    id: string;
+    value?: string;
+    checked?: boolean;
+    type?: string;
+    selectedIndex?: number;
+    selectionStart?: number | null;
+    selectionEnd?: number | null;
+}
+interface LockedScenarioSnapshot {
+    scenario: ViewModel;
+    markup: string;
+    controls: LockedControlState[];
+    scrollX: number;
+    scrollY: number;
+    focusedId?: string;
+}
 declare class ScenarioController {
     protected static _currentScenario: ViewModel;
+    private static lockedSnapshot?;
     static changeScenario(scenario: View, initOptions?: any): void;
+    static suspendCurrentScenarioForLock(): void;
+    static restoreLockedScenario(): boolean;
     protected static appInit(): void;
     protected static closeScenario(): void;
     protected static delHandlers(): void;
     protected static addHandlers(): void;
+    private static attachHandlers;
 }
 type TBackButton = () => any | Promise<any>;
 interface ViewModel {
@@ -232,32 +246,12 @@ declare class AndroidFS {
     private static selectVaultFolder;
     private static resolveUri;
     static NewFile(defaultFileName: string, fileContent: string): Promise<string | false>;
-    static ProbeWriteFileOnce(uri: string): Promise<{
-        status: string;
-        originalChars: number | null;
-        expectedChars: number | null;
-        actualChars: number | null;
-        writeVerified: boolean;
-        restored: boolean | null;
-        reused?: boolean;
-        failureType?: string;
-    }>;
     static WriteFile(uri: string, fileContent: string): Promise<boolean>;
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
 declare class FS {
     static NewFile(fileName: string, fileContent: string): Promise<string | false>;
-    static ProbeWriteFileOnce(uri: string): Promise<{
-        status: string;
-        originalChars: number | null;
-        expectedChars: number | null;
-        actualChars: number | null;
-        writeVerified: boolean;
-        restored: boolean | null;
-        reused?: boolean;
-        failureType?: string;
-    }>;
     static WriteFile(uri: string, fileContent: string): Promise<boolean>;
     static ReadFileBackup(uri: string): string | null;
     static ReadFile(uri: string): Promise<string | false>;
@@ -349,6 +343,7 @@ declare class ViewHelpers {
     static hiddeninput(id: string, val?: string): string;
     static numericinput(id: string, val?: string, placeholder?: string, _class?: string, readonly?: boolean): string;
     static password(id: string, placeholder?: string, _class?: string, readonly?: boolean): string;
+    static passwordInput(id: string, value?: string, placeholder?: string, _class?: string, readonly?: boolean): string;
     static cleanVal(val?: string): string;
     protected static getClass(_class?: string): string;
     protected static getChecked(checked?: boolean): string;
@@ -486,11 +481,14 @@ declare class PassView extends View implements ViewModel {
     protected searchTimer: number | undefined;
     protected searchRoutine(names: string[], firstTime?: boolean): void;
     End(): void;
+    ResumeAfterLock(): void;
     protected showHideTags(): void;
     protected PrintViewOrCopyBar(refId: string, label: string): string;
     protected showHideTagsStatus: 'show' | 'hide';
     protected searchEntry: string;
     protected searchEntryName(names: string[], name: string): string[];
+    private normalizeSearch;
+    private editSimilarity;
     protected onSubmit(e: Event): Promise<void>;
     onBackButton: TBackButton;
     protected onClick(e: Event): Promise<void>;
@@ -594,10 +592,16 @@ declare class WalletProfilesView extends View implements ViewModel {
     protected readonly IdAddExisting = "AddExistingWallet";
     protected readonly IdNewPassword = "NewWalletPassword";
     protected readonly IdRepeatPassword = "RepeatWalletPassword";
+    protected readonly IdBeginCreate = "BeginCreateWallet";
+    protected readonly IdCreateCancel = "CancelCreateWallet";
+    protected readonly IdCreateForm = "CreateWalletForm";
+    protected createMode: boolean;
+    protected pendingName: string;
     Handlers: EventHandlerModel[];
     Init(): Promise<void>;
     protected onClick(event: Event): Promise<void>;
     protected onSubmit(event: Event): Promise<void>;
+    private addWalletProfile;
     constructor();
 }
 declare class WalletCreatedView extends View implements ViewModel {

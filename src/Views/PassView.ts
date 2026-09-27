@@ -115,6 +115,11 @@ class PassView extends View implements ViewModel {
         this.searchTimer = undefined;
     }
 
+    public ResumeAfterLock(): void {
+        this.searchTimer = undefined;
+        this.searchRoutine(State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter), true);
+    }
+
     protected showHideTags() {
         switch (this.showHideTagsStatus) {
             case 'hide':
@@ -136,7 +141,7 @@ class PassView extends View implements ViewModel {
 
     protected PrintViewOrCopyBar(refId: string, label: string): string {
         return `<span id="${this.vocBarPre+refId}" class="d-none">
-        ${ViewHelpers.button('view_'+refId,Localization.text('entry.view')+' '+label,this.ClassFormBtnSec,{ 'data-view': refId })}
+        ${ViewHelpers.button('view_'+refId,Localization.text('entry.view')+' '+label,this.ClassFormBtnSec,{ 'data-view': refId, 'data-label': label })}
         ${ViewHelpers.button('copy_'+refId,Localization.text('entry.copy')+' '+label,this.ClassFormBtnSec,{ 'data-copy': refId })}
         ${ViewHelpers.button('cancel_'+refId,' X ',this.ClassFormBtnSec,{ 'data-cancel': refId })}
         </span>`;
@@ -147,12 +152,44 @@ class PassView extends View implements ViewModel {
     protected searchEntry: string = '';
 
     protected searchEntryName (names: string[], name: string): string[] {
-        let outNames = new Array<string>();
-        name = name.toLowerCase();
-        for (let n of names) {
-            if (n.toLowerCase().indexOf(name) != -1) outNames.push(n);
+        const query = this.normalizeSearch(name).trim();
+        if (!query) return names;
+        const queryTokens = query.split(/\s+/).filter(Boolean);
+        return names.filter(entryName => {
+            const entry = State.EntriesManage.GetEntry(entryName);
+            const searchable = this.normalizeSearch(`${entryName} ${entry ? entry.Description || '' : ''}`);
+            if (searchable.includes(query)) return true;
+            const words = searchable.split(/[^a-z0-9]+/).filter(Boolean);
+            return queryTokens.every(token => {
+                if (token.length <= 3) return searchable.includes(token);
+                const maxLength = Math.max(...words.map(word => word.length), token.length);
+                const threshold = Math.max(0.72, 1 - 1 / maxLength);
+                return words.some(word => this.editSimilarity(token, word) >= threshold);
+            });
+        });
+    }
+
+    private normalizeSearch(value: string): string {
+        return value.toLocaleLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
+    private editSimilarity(left: string, right: string): number {
+        if (left === right) return 1;
+        if (Math.abs(left.length - right.length) > 1) return 0;
+        const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+        let priorPrior: number[] | undefined;
+        for (let i = 1; i <= left.length; i++) {
+            const current = [i];
+            for (let j = 1; j <= right.length; j++) {
+                current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1));
+                if (i > 1 && j > 1 && left[i - 1] === right[j - 2] && left[i - 2] === right[j - 1]) {
+                    current[j] = Math.min(current[j], (priorPrior as number[])[j - 2] + 1);
+                }
+            }
+            priorPrior = previous.slice();
+            previous.splice(0, previous.length, ...current);
         }
-        return outNames;
+        return 1 - previous[right.length] / Math.max(left.length, right.length);
     }
 
     protected async onSubmit(e: Event) {
@@ -231,28 +268,33 @@ class PassView extends View implements ViewModel {
     }
 
     protected doVoc (refId: string, action: 'view' | 'copy' | 'cancel') {
+        const input = this.getEl(refId) as HTMLInputElement;
+        const viewButton = this.getEl('view_'+refId) as HTMLButtonElement;
+        const label = viewButton?.dataset['label'] || '';
+        const resetMask = (): void => {
+            if (input) input.type = 'password';
+            if (viewButton) viewButton.textContent = Localization.text('entry.view') + ' ' + label;
+        };
         switch(action) {
             case 'view':
-                this.setVal(refId, this.getVal(refId+this.valExt));
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    viewButton.textContent = Localization.text('entry.hide') + ' ' + label;
+                } else resetMask();
             break;
-            case 'copy':
-                switch(cordova.platformId) {
-                    case 'android':
-                        const androidSecret = this.getVal(refId+this.valExt);
-                        cordova.plugins.clipboard.copy(androidSecret);
-                        AutoLock.scheduleClipboardCleanup(androidSecret);
-                        this.setVal(refId, this.hideVal);
-                    break;
-                    case 'electron':
-                        const electronSecret = this.getVal(refId+this.valExt);
-                        void navigator.clipboard.writeText(electronSecret).then(() => AutoLock.scheduleClipboardCleanup(electronSecret)).catch(() => undefined);
-                        this.setVal(refId,this.hideVal);
-                    break;
+            case 'copy': {
+                const secret = this.getVal(refId+this.valExt);
+                if (cordova.platformId === 'android') {
+                    cordova.plugins.clipboard.copy(secret);
+                    AutoLock.scheduleClipboardCleanup(secret);
+                } else if (cordova.platformId === 'electron') {
+                    void navigator.clipboard.writeText(secret).then(() => AutoLock.scheduleClipboardCleanup(secret)).catch(() => undefined);
                 }
-                
+                resetMask();
+            }
             break;
             case 'cancel':
-                this.setVal(refId,this.hideVal);
+                resetMask();
                 this.hideEl(this.vocBarPre+refId);
             break;
         }
@@ -583,7 +625,7 @@ class PassView extends View implements ViewModel {
                 ${readonly ? `<strong translate="no">${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey+counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
                 </p>
                 <p class="row my-1">${ViewHelpers.hiddeninput(this.IdOtherValue+counter+this.valExt,entryVal)}
-                ${ViewHelpers.textinput(this.IdOtherValue+counter, this.hideVal, readonly ? '' : 'Put here a custom value', this.ClassFormCtrl + ' ', readonly, true)}
+                ${readonly ? ViewHelpers.passwordInput(this.IdOtherValue+counter, entryVal, '', this.ClassFormCtrl + ' ', true) : ViewHelpers.textinput(this.IdOtherValue+counter, this.hideVal, 'Put here a custom value', this.ClassFormCtrl + ' ', false, true)}
                 </p>
             </div>
             <div class="col-3 align-self-center">
@@ -594,7 +636,7 @@ class PassView extends View implements ViewModel {
 
     protected attrInput (attrId: string, attrLabel: string, attrPlaceholder: string, attrVal?: string, attrReadonly?: boolean, attrNoautocaps?: boolean, numeric?: boolean, hidden?: boolean): string {
         return `${(hidden && attrReadonly ? `<p>${this.PrintViewOrCopyBar(attrId, attrLabel)}</p>` : '')}<div class="${this.ClassFormFloat}">${hidden === true ? `${ViewHelpers.hiddeninput(attrId+this.valExt,attrVal)}` : ''}
-        ${numeric ? ViewHelpers.numericinput(attrId, hidden ? this.hideVal : attrVal, attrReadonly ? '' : attrPlaceholder, this.ClassFormCtrl, attrReadonly) : 
+        ${hidden && attrReadonly ? ViewHelpers.passwordInput(attrId, attrVal, '', this.ClassFormCtrl, true) : numeric ? ViewHelpers.numericinput(attrId, hidden ? this.hideVal : attrVal, attrReadonly ? '' : attrPlaceholder, this.ClassFormCtrl, attrReadonly) : 
         ViewHelpers.textinput(attrId, hidden ? this.hideVal : attrVal, attrReadonly ? '' : attrPlaceholder, this.ClassFormCtrl, attrReadonly, attrNoautocaps)}
         ${ViewHelpers.label(attrId, attrLabel)}
         </div>

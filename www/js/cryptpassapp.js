@@ -44,13 +44,12 @@ class State {
         this.__EntriesManage_ = null;
         this.__K_ = '';
         this.__Password_ = '';
-        this.UnlockWriteProbe = '';
     }
 }
 State.__K_ = '';
-State.UnlockWriteProbe = '';
 State.__Password_ = '';
 document.addEventListener('deviceready', () => {
+    initializeKeyboardViewport();
     try {
         Localization.initialize();
         ScenarioController.changeScenario(new WelcomeView());
@@ -59,6 +58,46 @@ document.addEventListener('deviceready', () => {
         alert('Localization resources could not be loaded.');
     }
 }, false);
+let keyboardFocusedElement = null;
+let keyboardScrollTimer;
+function keepFocusedControlVisible() {
+    if (!keyboardFocusedElement || !keyboardFocusedElement.isConnected)
+        return;
+    if (keyboardFocusedElement instanceof HTMLInputElement && (keyboardFocusedElement.readOnly || keyboardFocusedElement.disabled))
+        return;
+    if (keyboardFocusedElement instanceof HTMLTextAreaElement && (keyboardFocusedElement.readOnly || keyboardFocusedElement.disabled))
+        return;
+    if (keyboardScrollTimer !== undefined)
+        window.clearTimeout(keyboardScrollTimer);
+    keyboardScrollTimer = window.setTimeout(() => {
+        keyboardFocusedElement === null || keyboardFocusedElement === void 0 ? void 0 : keyboardFocusedElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }, 220);
+}
+function initializeKeyboardViewport() {
+    var _a;
+    document.addEventListener('focusin', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement))
+            return;
+        if (target.readOnly || target.disabled || target.type === 'hidden')
+            return;
+        keyboardFocusedElement === null || keyboardFocusedElement === void 0 ? void 0 : keyboardFocusedElement.classList.remove('keyboard-focused-control');
+        keyboardFocusedElement = target;
+        target.classList.add('keyboard-focused-control');
+        document.body.classList.add('keyboard-control-focused');
+        keepFocusedControlVisible();
+    });
+    document.addEventListener('focusout', event => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target === keyboardFocusedElement) {
+            target.classList.remove('keyboard-focused-control');
+            document.body.classList.remove('keyboard-control-focused');
+            keyboardFocusedElement = null;
+        }
+    });
+    (_a = window.visualViewport) === null || _a === void 0 ? void 0 : _a.addEventListener('resize', keepFocusedControlVisible);
+    window.addEventListener('resize', keepFocusedControlVisible);
+}
 class AutoLock {
     static start() {
         var _a, _b;
@@ -155,6 +194,7 @@ class AutoLock {
     }
     static lockSession() {
         return __awaiter(this, void 0, void 0, function* () {
+            ScenarioController.suspendCurrentScenarioForLock();
             let canUnlockWithDevice = false;
             if (cordova.platformId === 'android') {
                 try {
@@ -193,7 +233,8 @@ class AutoLock {
             this.deviceUnlockPassword = undefined;
             if (!(yield new AppActions().Unlock(password)))
                 return false;
-            ScenarioController.changeScenario(new PassView());
+            if (!ScenarioController.restoreLockedScenario())
+                ScenarioController.changeScenario(new PassView());
             return true;
         });
     }
@@ -244,19 +285,11 @@ class AppActions {
             }
             if (k) {
                 State.K = k;
-                let writeProbe;
-                try {
-                    writeProbe = yield Config.probeVaultWriteOnce();
-                }
-                catch (error) {
-                    writeProbe = { status: 'probe-threw', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null, failureType: error instanceof Error ? error.name : typeof error };
-                }
-                State.UnlockWriteProbe = JSON.stringify(writeProbe);
                 try {
                     State.EntriesManage = State.CryptPass.GetEntriesManage(State.K, true);
                 }
                 catch (error) {
-                    const diagnostic = this.unlockDiagnostic('decrypt-entries', data.kp, data.se, error, writeProbe);
+                    const diagnostic = this.unlockDiagnostic('decrypt-entries', data.kp, data.se, error);
                     console.error('Key derivation succeeded, but decrypting/parsing Pass.Entries failed.', diagnostic);
                     State.CryptPass = null;
                     State.EntriesManage = null;
@@ -274,7 +307,7 @@ class AppActions {
             }
         });
     }
-    unlockDiagnostic(phase, keyPassData, sequenceData, error, writeProbe) {
+    unlockDiagnostic(phase, keyPassData, sequenceData, error) {
         var _a;
         const keyPass = keyPassData && typeof keyPassData === 'object' ? keyPassData : undefined;
         const key = keyPass === null || keyPass === void 0 ? void 0 : keyPass.Key;
@@ -299,7 +332,6 @@ class AppActions {
             version: 1,
             phase: phase,
             keyDerivation: phase === 'decrypt-entries' ? 'success' : 'not-completed',
-            temporaryWriteProbe: writeProbe,
             vaultFormat: (key === null || key === void 0 ? void 0 : key.FormatVersion) === undefined ? 'legacy' : key.FormatVersion,
             kdf: (key === null || key === void 0 ? void 0 : key.Kdf) && { name: key.Kdf.name, N: key.Kdf.N, r: key.Kdf.r, p: key.Kdf.p },
             masterKeyChunks: Array.isArray(key === null || key === void 0 ? void 0 : key.MasterKChunks) ? key === null || key === void 0 ? void 0 : key.MasterKChunks.length : 0,
@@ -434,14 +466,6 @@ class Config {
             }
             else
                 return false;
-        });
-    }
-    static probeVaultWriteOnce() {
-        return __awaiter(this, void 0, void 0, function* () {
-            const kpPath = yield this.getKeyPassPath();
-            if (kpPath === false)
-                return { status: 'vault-path-unavailable', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null };
-            return FS.ProbeWriteFileOnce(kpPath);
         });
     }
     static writeKeyPass(kp) {
@@ -842,21 +866,104 @@ class ScenarioController {
         this.appInit();
         this.closeScenario();
         this._currentScenario = scenario;
-        this._currentScenario.Handlers.push({ name: 'ViewBack', handler: (e) => __awaiter(this, void 0, void 0, function* () { e.preventDefault(); yield this._currentScenario.onBackButton(); }), type: 'backbutton' });
-        this.addHandlers();
+        this.attachHandlers(this._currentScenario);
         this._currentScenario.Init(initOptions);
     }
+    static suspendCurrentScenarioForLock() {
+        const app = document.getElementById('app');
+        if (!app || !this._currentScenario)
+            return;
+        const active = document.activeElement;
+        const controls = Array.from(app.querySelectorAll('input[id], textarea[id], select[id]')).map(control => {
+            const item = control;
+            const state = { id: item.id };
+            if (item instanceof HTMLInputElement) {
+                state.value = item.value;
+                state.checked = item.checked;
+                state.type = item.type;
+                if (item.type === 'text' || item.type === 'search' || item.type === 'password') {
+                    try {
+                        state.selectionStart = item.selectionStart;
+                        state.selectionEnd = item.selectionEnd;
+                    }
+                    catch (_) { }
+                }
+            }
+            else if (item instanceof HTMLTextAreaElement) {
+                state.value = item.value;
+                try {
+                    state.selectionStart = item.selectionStart;
+                    state.selectionEnd = item.selectionEnd;
+                }
+                catch (_) { }
+            }
+            else {
+                state.value = item.value;
+                state.selectedIndex = item.selectedIndex;
+            }
+            return state;
+        });
+        this.lockedSnapshot = {
+            scenario: this._currentScenario,
+            markup: app.innerHTML,
+            controls: controls,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            focusedId: active && app.contains(active) ? active.id : undefined
+        };
+    }
+    static restoreLockedScenario() {
+        var _a;
+        const snapshot = this.lockedSnapshot;
+        const app = document.getElementById('app');
+        if (!snapshot || !app)
+            return false;
+        this.closeScenario();
+        this._currentScenario = snapshot.scenario;
+        this._currentScenario.Handlers = this._currentScenario.Handlers.filter(handler => handler.name !== 'ViewBack');
+        this.attachHandlers(this._currentScenario);
+        app.innerHTML = snapshot.markup;
+        app.style.display = 'block';
+        const loader = document.getElementById('loader');
+        if (loader)
+            loader.style.display = 'none';
+        snapshot.controls.forEach(state => {
+            const control = document.getElementById(state.id);
+            if (!control)
+                return;
+            if (state.value !== undefined)
+                control.value = state.value;
+            if (control instanceof HTMLInputElement && state.checked !== undefined)
+                control.checked = state.checked;
+            if (control instanceof HTMLSelectElement && state.selectedIndex !== undefined)
+                control.selectedIndex = state.selectedIndex;
+            if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) && state.selectionStart !== undefined && state.selectionStart !== null) {
+                try {
+                    control.setSelectionRange(state.selectionStart, state.selectionEnd == null ? state.selectionStart : state.selectionEnd);
+                }
+                catch (_) { }
+            }
+        });
+        this.lockedSnapshot = undefined;
+        window.requestAnimationFrame(() => {
+            var _a;
+            window.scrollTo(snapshot.scrollX, snapshot.scrollY);
+            if (snapshot.focusedId)
+                (_a = document.getElementById(snapshot.focusedId)) === null || _a === void 0 ? void 0 : _a.focus({ preventScroll: true });
+        });
+        const resumable = this._currentScenario;
+        (_a = resumable.ResumeAfterLock) === null || _a === void 0 ? void 0 : _a.call(resumable);
+        return true;
+    }
     static appInit() {
-        if (this._currentScenario === undefined) {
+        if (this._currentScenario === undefined)
             EventsController.Initialize();
-        }
     }
     static closeScenario() {
         if (this._currentScenario !== undefined) {
             this.delHandlers();
-            if (this._currentScenario.End !== undefined) {
+            if (this._currentScenario.End !== undefined)
                 this._currentScenario.End();
-            }
         }
     }
     static delHandlers() {
@@ -868,6 +975,11 @@ class ScenarioController {
         this._currentScenario.Handlers.forEach((_handler) => {
             EventsController.addEventHandler(_handler.name, _handler.type, _handler.handler);
         });
+    }
+    static attachHandlers(scenario) {
+        scenario.Handlers = scenario.Handlers.filter(handler => handler.name !== 'ViewBack');
+        scenario.Handlers.push({ name: 'ViewBack', handler: (e) => __awaiter(this, void 0, void 0, function* () { e.preventDefault(); yield scenario.onBackButton(); }), type: 'backbutton' });
+        this.addHandlers();
     }
 }
 class View {
@@ -1128,70 +1240,6 @@ class AndroidFS {
             }
         });
     }
-    static ProbeWriteFileOnce(uri) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const marker = 'cryptPassTemporaryUnlockWriteProbe:v1';
-            const previous = window.localStorage.getItem(marker);
-            if (previous) {
-                try {
-                    return Object.assign(Object.assign({}, JSON.parse(previous)), { reused: true });
-                }
-                catch (_) { }
-            }
-            const original = yield this.ReadFile(uri);
-            if (original === false) {
-                const result = { status: 'read-before-write-failed', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null };
-                window.localStorage.setItem(marker, JSON.stringify(result));
-                return result;
-            }
-            const expected = ' ' + original;
-            const liveUri = yield this.resolveUri(uri);
-            if (liveUri === false) {
-                const result = { status: 'resolve-document-failed', originalChars: original.length, expectedChars: expected.length, actualChars: null, writeVerified: false, restored: null };
-                window.localStorage.setItem(marker, JSON.stringify(result));
-                return result;
-            }
-            window.localStorage.setItem(uri, original);
-            let failureType;
-            try {
-                yield cordova.plugins.saveDialog.saveFileByUri(new Blob([expected], { type: defaultMimeType }), liveUri);
-            }
-            catch (error) {
-                failureType = error instanceof Error ? error.name : typeof error;
-            }
-            let afterWrite = false;
-            try {
-                afterWrite = yield this.ReadFile(uri);
-            }
-            catch (_) { }
-            const writeVerified = afterWrite === expected;
-            let restoreFailureType;
-            try {
-                yield cordova.plugins.saveDialog.saveFileByUri(new Blob([original], { type: defaultMimeType }), liveUri);
-            }
-            catch (error) {
-                restoreFailureType = error instanceof Error ? error.name : typeof error;
-            }
-            let restoredContent = false;
-            try {
-                restoredContent = yield this.ReadFile(uri);
-            }
-            catch (_) { }
-            const restored = restoredContent === original;
-            const result = {
-                status: restored ? (writeVerified ? 'write-verified-and-restored' : 'write-not-verified-and-restored') : 'restore-failed-recovery-copy-kept',
-                originalChars: original.length,
-                expectedChars: expected.length,
-                actualChars: afterWrite === false ? null : afterWrite.length,
-                writeVerified: writeVerified,
-                restored: restored,
-                failureType: failureType,
-                restoreFailureType: restoreFailureType
-            };
-            window.localStorage.setItem(marker, JSON.stringify(result));
-            return result;
-        });
-    }
     static WriteFile(uri, fileContent) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
@@ -1260,13 +1308,6 @@ class FS {
                 default:
                     return false;
             }
-        });
-    }
-    static ProbeWriteFileOnce(uri) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (cordova.platformId !== 'android')
-                return { status: 'unsupported-platform', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null };
-            return AndroidFS.ProbeWriteFileOnce(uri);
         });
     }
     static WriteFile(uri, fileContent) {
@@ -1656,6 +1697,9 @@ class ViewHelpers {
     static password(id, placeholder, _class, readonly) {
         return this.genericInput({ id: id, placeholder: placeholder, readonly: readonly, _class: _class, type: 'password' });
     }
+    static passwordInput(id, value, placeholder, _class, readonly) {
+        return this.genericInput({ id: id, val: value, placeholder: placeholder, readonly: readonly, _class: _class, type: 'password' });
+    }
     static cleanVal(val) {
         if (val !== undefined)
             return this.escapeHtmlAttribute(val);
@@ -1938,11 +1982,8 @@ class MainView extends View {
                     return false;
                 }
                 if (pwdCorrect) {
-                    if (State.UnlockWriteProbe) {
-                        alert(Localization.text('main.temporaryWriteProbe') + ': ' + State.UnlockWriteProbe);
-                        State.UnlockWriteProbe = '';
-                    }
-                    yield this.Init();
+                    if (!ScenarioController.restoreLockedScenario())
+                        yield this.Init();
                     return true;
                 }
                 alert(Localization.text('main.wrongPassword'));
@@ -2343,6 +2384,10 @@ class PassView extends View {
             window.clearTimeout(this.searchTimer);
         this.searchTimer = undefined;
     }
+    ResumeAfterLock() {
+        this.searchTimer = undefined;
+        this.searchRoutine(State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter), true);
+    }
     showHideTags() {
         switch (this.showHideTagsStatus) {
             case 'hide':
@@ -2363,19 +2408,53 @@ class PassView extends View {
     }
     PrintViewOrCopyBar(refId, label) {
         return `<span id="${this.vocBarPre + refId}" class="d-none">
-        ${ViewHelpers.button('view_' + refId, Localization.text('entry.view') + ' ' + label, this.ClassFormBtnSec, { 'data-view': refId })}
+        ${ViewHelpers.button('view_' + refId, Localization.text('entry.view') + ' ' + label, this.ClassFormBtnSec, { 'data-view': refId, 'data-label': label })}
         ${ViewHelpers.button('copy_' + refId, Localization.text('entry.copy') + ' ' + label, this.ClassFormBtnSec, { 'data-copy': refId })}
         ${ViewHelpers.button('cancel_' + refId, ' X ', this.ClassFormBtnSec, { 'data-cancel': refId })}
         </span>`;
     }
     searchEntryName(names, name) {
-        let outNames = new Array();
-        name = name.toLowerCase();
-        for (let n of names) {
-            if (n.toLowerCase().indexOf(name) != -1)
-                outNames.push(n);
+        const query = this.normalizeSearch(name).trim();
+        if (!query)
+            return names;
+        const queryTokens = query.split(/\s+/).filter(Boolean);
+        return names.filter(entryName => {
+            const entry = State.EntriesManage.GetEntry(entryName);
+            const searchable = this.normalizeSearch(`${entryName} ${entry ? entry.Description || '' : ''}`);
+            if (searchable.includes(query))
+                return true;
+            const words = searchable.split(/[^a-z0-9]+/).filter(Boolean);
+            return queryTokens.every(token => {
+                if (token.length <= 3)
+                    return searchable.includes(token);
+                const maxLength = Math.max(...words.map(word => word.length), token.length);
+                const threshold = Math.max(0.72, 1 - 1 / maxLength);
+                return words.some(word => this.editSimilarity(token, word) >= threshold);
+            });
+        });
+    }
+    normalizeSearch(value) {
+        return value.toLocaleLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+    editSimilarity(left, right) {
+        if (left === right)
+            return 1;
+        if (Math.abs(left.length - right.length) > 1)
+            return 0;
+        const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+        let priorPrior;
+        for (let i = 1; i <= left.length; i++) {
+            const current = [i];
+            for (let j = 1; j <= right.length; j++) {
+                current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1));
+                if (i > 1 && j > 1 && left[i - 1] === right[j - 2] && left[i - 2] === right[j - 1]) {
+                    current[j] = Math.min(current[j], priorPrior[j - 2] + 1);
+                }
+            }
+            priorPrior = previous.slice();
+            previous.splice(0, previous.length, ...current);
         }
-        return outNames;
+        return 1 - previous[right.length] / Math.max(left.length, right.length);
     }
     onSubmit(e) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -2459,27 +2538,39 @@ class PassView extends View {
         });
     }
     doVoc(refId, action) {
+        const input = this.getEl(refId);
+        const viewButton = this.getEl('view_' + refId);
+        const label = (viewButton === null || viewButton === void 0 ? void 0 : viewButton.dataset['label']) || '';
+        const resetMask = () => {
+            if (input)
+                input.type = 'password';
+            if (viewButton)
+                viewButton.textContent = Localization.text('entry.view') + ' ' + label;
+        };
         switch (action) {
             case 'view':
-                this.setVal(refId, this.getVal(refId + this.valExt));
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    viewButton.textContent = Localization.text('entry.hide') + ' ' + label;
+                }
+                else
+                    resetMask();
                 break;
             case 'copy':
-                switch (cordova.platformId) {
-                    case 'android':
-                        const androidSecret = this.getVal(refId + this.valExt);
-                        cordova.plugins.clipboard.copy(androidSecret);
-                        AutoLock.scheduleClipboardCleanup(androidSecret);
-                        this.setVal(refId, this.hideVal);
-                        break;
-                    case 'electron':
-                        const electronSecret = this.getVal(refId + this.valExt);
-                        void navigator.clipboard.writeText(electronSecret).then(() => AutoLock.scheduleClipboardCleanup(electronSecret)).catch(() => undefined);
-                        this.setVal(refId, this.hideVal);
-                        break;
+                {
+                    const secret = this.getVal(refId + this.valExt);
+                    if (cordova.platformId === 'android') {
+                        cordova.plugins.clipboard.copy(secret);
+                        AutoLock.scheduleClipboardCleanup(secret);
+                    }
+                    else if (cordova.platformId === 'electron') {
+                        void navigator.clipboard.writeText(secret).then(() => AutoLock.scheduleClipboardCleanup(secret)).catch(() => undefined);
+                    }
+                    resetMask();
                 }
                 break;
             case 'cancel':
-                this.setVal(refId, this.hideVal);
+                resetMask();
                 this.hideEl(this.vocBarPre + refId);
                 break;
         }
@@ -2807,7 +2898,7 @@ class PassView extends View {
                 ${readonly ? `<strong translate="no">${ViewHelpers.escapeHtmlText(entryKey)}</strong>` : ViewHelpers.textinput(this.IdOtherKey + counter, entryKey, 'Put here a custom label', this.ClassFormCtrl, readonly)}
                 </p>
                 <p class="row my-1">${ViewHelpers.hiddeninput(this.IdOtherValue + counter + this.valExt, entryVal)}
-                ${ViewHelpers.textinput(this.IdOtherValue + counter, this.hideVal, readonly ? '' : 'Put here a custom value', this.ClassFormCtrl + ' ', readonly, true)}
+                ${readonly ? ViewHelpers.passwordInput(this.IdOtherValue + counter, entryVal, '', this.ClassFormCtrl + ' ', true) : ViewHelpers.textinput(this.IdOtherValue + counter, this.hideVal, 'Put here a custom value', this.ClassFormCtrl + ' ', false, true)}
                 </p>
             </div>
             <div class="col-3 align-self-center">
@@ -2817,7 +2908,7 @@ class PassView extends View {
     }
     attrInput(attrId, attrLabel, attrPlaceholder, attrVal, attrReadonly, attrNoautocaps, numeric, hidden) {
         return `${(hidden && attrReadonly ? `<p>${this.PrintViewOrCopyBar(attrId, attrLabel)}</p>` : '')}<div class="${this.ClassFormFloat}">${hidden === true ? `${ViewHelpers.hiddeninput(attrId + this.valExt, attrVal)}` : ''}
-        ${numeric ? ViewHelpers.numericinput(attrId, hidden ? this.hideVal : attrVal, attrReadonly ? '' : attrPlaceholder, this.ClassFormCtrl, attrReadonly) :
+        ${hidden && attrReadonly ? ViewHelpers.passwordInput(attrId, attrVal, '', this.ClassFormCtrl, true) : numeric ? ViewHelpers.numericinput(attrId, hidden ? this.hideVal : attrVal, attrReadonly ? '' : attrPlaceholder, this.ClassFormCtrl, attrReadonly) :
             ViewHelpers.textinput(attrId, hidden ? this.hideVal : attrVal, attrReadonly ? '' : attrPlaceholder, this.ClassFormCtrl, attrReadonly, attrNoautocaps)}
         ${ViewHelpers.label(attrId, attrLabel)}
         </div>
@@ -3180,26 +3271,50 @@ class WalletProfilesView extends View {
             ${ViewHelpers.button('wallet_rename_' + profile.id, 'Rename', this.ClassFormBtnSec, { 'data-wallet': profile.id })}
             ${profile.active || profiles.length < 2 ? '' : ViewHelpers.button('wallet_remove_' + profile.id, 'Remove from app', this.ClassFormBtnSec, { 'data-wallet': profile.id })}
         </div>`).join('');
-            this.setApp(`<h2>Wallets</h2>
-            <p>Each wallet keeps its own file and recovery sequence. Removing a wallet only removes its local profile; it does not delete the vault file.</p>
+            const creationFields = this.createMode ? `
+            <p>${Localization.text('wallet.passwordPurpose')}</p>
+            <label for="${this.IdNewPassword}">${Localization.text('wallet.password')}</label>
+            ${ViewHelpers.password(this.IdNewPassword, Localization.text('password.type'), this.ClassFormCtrl)}
+            <label for="${this.IdRepeatPassword}">${Localization.text('wallet.passwordRepeat')}</label>
+            ${ViewHelpers.password(this.IdRepeatPassword, Localization.text('password.repeatShort'), this.ClassFormCtrl)}
+            <p class="mt-2">${ViewHelpers.submit(this.IdAddWallet, Localization.text('wallet.create'), this.ClassFormBtn)}
+            ${ViewHelpers.button(this.IdCreateCancel, Localization.text('common.cancel'), this.ClassFormBtnSec)}</p>` : `
+            <p>${ViewHelpers.button(this.IdBeginCreate, Localization.text('wallet.create'), this.ClassFormBtn)}
+            ${ViewHelpers.button(this.IdAddExisting, Localization.text('wallet.addExisting'), this.ClassFormBtnSec)}</p>`;
+            this.setApp(`<h2>${Localization.text('wallet.title')}</h2>
+            <p>${Localization.text('wallet.explanation')}</p>
             ${rows}
             <form id="${this.IdWalletManager}">
-                <label for="${this.IdWalletName}">New wallet name</label>
-                <input class="form-control" id="${this.IdWalletName}" maxlength="80" required>
-                <label for="${this.IdNewPassword}">${Localization.text('wallet.password')}</label>
-                ${ViewHelpers.password(this.IdNewPassword, 'Type password', this.ClassFormCtrl)}
-                <label for="${this.IdRepeatPassword}">${Localization.text('wallet.passwordRepeat')}</label>
-                ${ViewHelpers.password(this.IdRepeatPassword, 'Repeat password', this.ClassFormCtrl)}
-                <p class="mt-2">${ViewHelpers.submit(this.IdAddWallet, 'Create wallet', this.ClassFormBtn)}
-                ${ViewHelpers.submit(this.IdAddExisting, Localization.text('wallet.addExisting'), this.ClassFormBtnSec)}
-                ${ViewHelpers.button('WalletBack', 'Go back', this.ClassFormBtnSec)}</p>
+                <label for="${this.IdWalletName}">${Localization.text('wallet.newName')}</label>
+                ${ViewHelpers.textinput(this.IdWalletName, this.pendingName, '', this.ClassFormCtrl)}
+                ${creationFields}
+                ${ViewHelpers.button('WalletBack', Localization.text('wallet.back'), this.ClassFormBtnSec)}
             </form>`, () => this.clickEl('WalletBack'));
         });
     }
     onClick(event) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             const target = event.target;
             const id = target.id;
+            if (id === this.IdBeginCreate) {
+                this.pendingName = this.getEl(this.IdWalletName).value.trim();
+                this.createMode = true;
+                yield this.Init();
+                (_a = this.getEl(this.IdNewPassword)) === null || _a === void 0 ? void 0 : _a.focus();
+                return;
+            }
+            if (id === this.IdCreateCancel) {
+                this.pendingName = this.getEl(this.IdWalletName).value.trim();
+                this.createMode = false;
+                yield this.Init();
+                return;
+            }
+            if (id === this.IdAddExisting) {
+                const name = this.getEl(this.IdWalletName).value.trim();
+                yield this.addWalletProfile(name, true);
+                return;
+            }
             if (id === 'WalletBack') {
                 ScenarioController.changeScenario(new OtherView());
                 return;
@@ -3234,17 +3349,19 @@ class WalletProfilesView extends View {
     }
     onSubmit(event) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
             if (event.target.id !== this.IdWalletManager)
                 return;
             event.preventDefault();
             const name = this.getEl(this.IdWalletName).value.trim();
-            const submitterId = (_a = event.submitter) === null || _a === void 0 ? void 0 : _a.id;
-            const isExistingVault = submitterId === this.IdAddExisting;
             const password = this.getEl(this.IdNewPassword).value;
             const repeatedPassword = this.getEl(this.IdRepeatPassword).value;
-            if (!isExistingVault && !CommonHelpers.CheckNewPassword(password, repeatedPassword))
+            if (!CommonHelpers.CheckNewPassword(password, repeatedPassword))
                 return;
+            yield this.addWalletProfile(name, false, password);
+        });
+    }
+    addWalletProfile(name, isExistingVault, password) {
+        return __awaiter(this, void 0, void 0, function* () {
             if (!name || name.length > 80) {
                 alert(Localization.text('wallet.createError'));
                 return;
@@ -3286,6 +3403,11 @@ class WalletProfilesView extends View {
         this.IdAddExisting = 'AddExistingWallet';
         this.IdNewPassword = 'NewWalletPassword';
         this.IdRepeatPassword = 'RepeatWalletPassword';
+        this.IdBeginCreate = 'BeginCreateWallet';
+        this.IdCreateCancel = 'CancelCreateWallet';
+        this.IdCreateForm = 'CreateWalletForm';
+        this.createMode = false;
+        this.pendingName = '';
         this.Handlers = [
             { name: 'WalletProfilesClick', handler: event => { void this.onClick(event); }, type: 'click' }
         ];

@@ -23,7 +23,6 @@
   "main.copyDiagnostic": "Copia diagnostica",
   "main.diagnosticCopied": "Diagnostica copiata",
   "main.diagnosticCopyFailed": "Copia non riuscita",
-  "main.temporaryWriteProbe": "Esito della prova temporanea di scrittura",
   "main.unlockLegacyError": "Il vault è in formato legacy: qui password e sequenza non possono essere verificate con certezza. Controlla che la sequenza sia quella associata proprio a questo file; la conversione a v2 avviene solo dopo uno sblocco riuscito e un salvataggio.",
   "main.accessError": "Impossibile accedere al portafoglio cifrato. Controlla il file e l'archivio protetto.",
   "main.manageWallets": "Gestisci i portafogli",
@@ -165,8 +164,8 @@
   "restore.selectOption": "Seleziona un’opzione:",
   "restore.sequence": "Sequenza",
   "wallet.back": "Indietro",
-  "wallet.password": "Password principale di questo portafoglio",
-  "wallet.passwordRepeat": "Ripeti la password principale",
+  "wallet.password": "Password per cifrare il nuovo portafoglio",
+  "wallet.passwordRepeat": "Conferma la password del nuovo portafoglio",
   "wallet.addExisting": "Aggiungi un vault esistente",
   "wallet.existingInstructions": "Seleziona il file del vault e inserisci la sua sequenza di recupero.",
   "wallet.created": "Portafoglio creato",
@@ -345,5 +344,7 @@
   "preferences.loadError": "Impossibile caricare le preferenze. Riprova.",
   "wallet.defaultName": "Il mio portafoglio",
   "file.newVaultName": "Scegli il nome del file del nuovo portafoglio:",
-  "file.invalidVaultName": "Il nome del file è vuoto o contiene caratteri non consentiti da Android."
+  "file.invalidVaultName": "Il nome del file è vuoto o contiene caratteri non consentiti da Android.",
+  "entry.hide": "Nascondi",
+  "wallet.passwordPurpose": "Questa password cifra il nuovo portafoglio. La ripetizione serve solo a verificare che sia stata digitata correttamente."
 }

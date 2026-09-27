@@ -55,6 +55,10 @@ class ViewHelpers {
         return this.genericInput({ id: id, placeholder: placeholder, readonly: readonly, _class: _class, type: 'password' });
     }
 
+    public static passwordInput (id: string, value?: string, placeholder?: string, _class?: string, readonly?: boolean): string {
+        return this.genericInput({ id: id, val: value, placeholder: placeholder, readonly: readonly, _class: _class, type: 'password' });
+    }
+
     public static cleanVal(val?: string): string {
         if (val !== undefined)
             return this.escapeHtmlAttribute(val);

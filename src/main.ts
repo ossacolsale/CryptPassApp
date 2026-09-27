@@ -51,6 +51,7 @@ class State {
 
 
 document.addEventListener('deviceready', () => {
+    initializeKeyboardViewport();
     try {
         Localization.initialize();
         ScenarioController.changeScenario(new WelcomeView());
@@ -58,6 +59,43 @@ document.addEventListener('deviceready', () => {
         alert('Localization resources could not be loaded.');
     }
 }, false);
+
+
+let keyboardFocusedElement: HTMLElement | null = null;
+let keyboardScrollTimer: number | undefined;
+
+function keepFocusedControlVisible(): void {
+    if (!keyboardFocusedElement || !keyboardFocusedElement.isConnected) return;
+    if (keyboardFocusedElement instanceof HTMLInputElement && (keyboardFocusedElement.readOnly || keyboardFocusedElement.disabled)) return;
+    if (keyboardFocusedElement instanceof HTMLTextAreaElement && (keyboardFocusedElement.readOnly || keyboardFocusedElement.disabled)) return;
+    if (keyboardScrollTimer !== undefined) window.clearTimeout(keyboardScrollTimer);
+    keyboardScrollTimer = window.setTimeout(() => {
+        keyboardFocusedElement?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }, 220);
+}
+
+function initializeKeyboardViewport(): void {
+    document.addEventListener('focusin', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+        if (target.readOnly || target.disabled || target.type === 'hidden') return;
+        keyboardFocusedElement?.classList.remove('keyboard-focused-control');
+        keyboardFocusedElement = target;
+        target.classList.add('keyboard-focused-control');
+        document.body.classList.add('keyboard-control-focused');
+        keepFocusedControlVisible();
+    });
+    document.addEventListener('focusout', event => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target === keyboardFocusedElement) {
+            target.classList.remove('keyboard-focused-control');
+            document.body.classList.remove('keyboard-control-focused');
+            keyboardFocusedElement = null;
+        }
+    });
+    window.visualViewport?.addEventListener('resize', keepFocusedControlVisible);
+    window.addEventListener('resize', keepFocusedControlVisible);
+}
 
 
 class AutoLock {

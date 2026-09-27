@@ -54,7 +54,7 @@ Only pass/fail and lengths were printed; no secrets or plaintext were logged. Th
 - Whether the actual persisted URI still has both read and write permissions after process death/reboot.
 - Which DocumentsProvider serves the failing folder.
 
-The implementation checks the grant at folder selection and creation, but does not currently collect a permission snapshot for every later read/write. The new unlock diagnostic therefore cannot yet prove or falsify the “WRITE grant disappears” theory.
+The implementation checks the grant at folder selection and creation, but does not currently collect a permission snapshot for every later read/write. The user has since confirmed that the folder grant remains usable for subsequent writes; the suspected grant loss was not the cause of the unlock failure.
 
 ## Provider analysis
 
@@ -107,13 +107,13 @@ No overlapping writes were reproduced. A race remains **POSSIBLE but UNPROVEN** 
 
 The earlier diagnostic panel was also absent from the first APK in this task because that build used `tsc --noEmit`. The final builds now emit the JavaScript before Cordova packages it.
 
-This explains the reported unlock failure. The SAF write-grant theory is not supported by this diagnostic; its temporary write probe remains in the current APK only as the user-requested confirmation and will be removed on the next change round.
+This explains the reported unlock failure. The SAF write-grant theory was not the cause. The user subsequently confirmed that repeated writes work and that the folder grant remains available. The temporary leading-space write probe has now been removed completely.
 
 ## Patch
 
 - Added structured, secret-free diagnostics across vault load, reader construction, key derivation, and entries decryption.
 - Added a persistent diagnostic panel with an explicit clipboard button; copy uses Cordova Clipboard on Android and the Web Clipboard API where available.
-- Added a **temporary, one-time SAF write probe** after `GetK()` succeeds. It writes the same vault JSON with one leading space, reads it back, then always writes and verifies the original text again. It keeps the original encrypted text as a local recovery copy and records whether probe write and restoration were verified. The code is explicitly marked for removal after this diagnostic round.
+- Removed the temporary leading-space write probe after the user confirmed that Android retains the folder grant and repeated writes succeed. No unlock path now modifies the vault as a diagnostic.
 - Updated README's dependency note: `package.json` selects the default Git branch while `package-lock.json` records the exact commit for reproducible installs.
 - The first debug APK produced in this investigation accidentally contained stale compiled UI because of `tsc --noEmit`; it was missing the panel. This was found after the user's device report.
 - Regenerated the final debug APK at `platforms/android/app/build/outputs/apk/debug/app-debug.apk` using the side-by-side test-package procedure, with emitting `npx tsc`; `config.xml` was restored after the build. The final APK was rebuilt again after the AutoLock fix and includes the corrected methods.
@@ -124,7 +124,7 @@ This explains the reported unlock failure. The SAF write-grant theory is not sup
 - TypeScript compile: passed.
 - Fresh v2 library round-trip: passed outside Android.
 - Android provider permission lifecycle and actual vault round-trip: pending device capture.
-- Temporary write probe and restoration: compiled into final APK, not yet executed on a connected device.
+- Temporary write probe: removed after the user confirmed normal repeated writes.
 - AutoLock alias-collision regression check: added; validates that `reset()` emits as a method and no longer uses `_a.scheduleLock`.
 
 ## Remaining uncertainties
@@ -133,9 +133,18 @@ This explains the reported unlock failure. The SAF write-grant theory is not sup
 2. Expected-vs-read-back bytes and operation order immediately before the failing unlock.
 3. Exact error stage and envelope metadata from the user's current APK; the new copy button is intended to supply this.
 4. Whether the failure reproduces for the same vault in another CryptPass client using the same library commit.
-5. Device-side result of the temporary write probe: it should report `write-verified-and-restored` when both write and exact read-back succeed and the original is restored. This result is secondary now that the unlock blocker is identified.
 
 ## Confidence
 
 - High confidence in the static code-path and local round-trip observations.
 - Low confidence in any device-side root cause until the copied diagnostic and provider details are available.
+
+## Follow-up UI changes (2026-09-27)
+
+- Kept the detailed inline unlock diagnostic and clipboard-copy action.
+- Removed the temporary write probe and its state, APIs, and locale text.
+- Secret values on entry cards now use password-type controls with a per-field **View/Hide** toggle; copy and cancel return them to the masked state.
+- Added viewport-aware scrolling for the active editable control when the Android keyboard opens, including dynamically added custom fields.
+- Auto-lock stores the current scenario markup and control state in memory and restores it after password or device unlock; nothing is persisted for this snapshot.
+- Wallet creation now asks for the master password only after choosing to create a new vault and explains its purpose. Adding an existing vault does not show those fields.
+- Entry search now includes descriptions, ignores accents/case, and tolerates one small edit error in longer query terms.

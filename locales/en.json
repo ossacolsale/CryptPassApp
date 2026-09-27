@@ -23,7 +23,6 @@
   "main.copyDiagnostic": "Copy diagnostic",
   "main.diagnosticCopied": "Diagnostic copied",
   "main.diagnosticCopyFailed": "Copy failed",
-  "main.temporaryWriteProbe": "Temporary write probe result",
   "main.unlockLegacyError": "This vault uses a legacy format, where this check cannot reliably verify the password and sequence. Confirm the sequence belongs to this exact file. Conversion to v2 happens only after a successful unlock and save.",
   "main.accessError": "Unable to access the encrypted wallet. Check its file and secure storage.",
   "main.manageWallets": "Manage wallets",
@@ -165,8 +164,8 @@
   "restore.selectOption": "Please select one option:",
   "restore.sequence": "Sequence",
   "wallet.back": "Go back",
-  "wallet.password": "Master password for this wallet",
-  "wallet.passwordRepeat": "Repeat master password",
+  "wallet.password": "Password to encrypt the new wallet",
+  "wallet.passwordRepeat": "Confirm the new wallet password",
   "wallet.addExisting": "Add existing vault",
   "wallet.existingInstructions": "Select the existing vault file and enter its recovery sequence.",
   "wallet.created": "Wallet created",
@@ -345,5 +344,7 @@
   "preferences.loadError": "Unable to load preferences. Please retry.",
   "wallet.defaultName": "My wallet",
   "file.newVaultName": "Choose a file name for the new vault:",
-  "file.invalidVaultName": "The file name is empty or contains characters Android does not allow."
+  "file.invalidVaultName": "The file name is empty or contains characters Android does not allow.",
+  "entry.hide": "Hide",
+  "wallet.passwordPurpose": "This password encrypts the new wallet. Repeating it checks that it was typed correctly."
 }

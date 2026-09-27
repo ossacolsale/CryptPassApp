@@ -38,3 +38,13 @@ body {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+
+.keyboard-focused-control {
+    scroll-margin-top: 1.5rem;
+    scroll-margin-bottom: 2rem;
+}
+
+body.keyboard-control-focused {
+    padding-bottom: 40vh;
+}
