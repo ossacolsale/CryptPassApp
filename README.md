@@ -33,7 +33,7 @@ On Linux and Windows, choose **New vault** to open the native save dialog and cr
 
 On Android, choose the folder containing the vault in the system folder picker; CryptPass then lists files in that folder so you can choose the vault inside the app. Android may prevent selecting a storage root; select the subfolder that directly contains the vault. The app keeps a persistable SAF grant to that folder and resolves the current child by filename when reading or writing. This lets it follow a vault that a local sync app replaces in place. Relinking an existing vault requires choosing the folder and then the file once; the recovery sequence remains saved.
 
-The app pins CryptPass `0.1.0` at commit `aa2d9e5800d1c797403f2d0428a1e4217abd32bf`. Existing legacy vaults can be opened through the library's compatibility reader. A successful save through the password-based API rewrites the vault in the authenticated format. Legacy vault format migration happens when the user successfully saves them. Existing single-wallet application settings migrate into a local wallet profile at startup after the new profile record is written and verified.
+The app depends on CryptPass from the default Git branch; `package-lock.json` records the exact commit used for reproducible installs. Existing legacy vaults can be opened through the library's compatibility reader. A successful save through the password-based API rewrites the vault in the authenticated format. Legacy vault format migration happens when the user successfully saves them. Existing single-wallet application settings migrate into a local wallet profile at startup after the new profile record is written and verified.
 
 ## Security behavior and limits
 

@@ -52,7 +52,7 @@
     }
   },
   "dependencies": {
-    "cryptpass": "git+https://github.com/ossacolsale/CryptPass.git#aa2d9e5800d1c797403f2d0428a1e4217abd32bf"
+    "cryptpass": "git+https://github.com/ossacolsale/CryptPass.git"
   },
   "overrides": {
     "electron": "44.4.5",

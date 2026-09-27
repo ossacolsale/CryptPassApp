@@ -74,35 +74,35 @@ class AutoLock {
     public static start(): void {
         if (!this.listening) {
             this.listening = true;
-            ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, this.reset, { passive: true }));
-            document.addEventListener('visibilitychange', this.onVisibilityChange);
-            document.addEventListener('pause', this.checkInactivity);
-            document.addEventListener('resume', this.checkInactivity);
-            window.addEventListener('blur', this.onWindowBlur);
-            this.removeElectronListener = window.cryptPassDesktop?.onLockRequested?.(this.lock);
+            ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, AutoLock.reset, { passive: true }));
+            document.addEventListener('visibilitychange', AutoLock.onVisibilityChange);
+            document.addEventListener('pause', AutoLock.checkInactivity);
+            document.addEventListener('resume', AutoLock.checkInactivity);
+            window.addEventListener('blur', AutoLock.onWindowBlur);
+            this.removeElectronListener = window.cryptPassDesktop?.onLockRequested?.(AutoLock.lock);
         }
-        this.reset();
+        AutoLock.reset();
     }
 
-    private static reset = (): void => {
-        this.lastActivity = Date.now();
-        this.scheduleLock(LocalStorage.AutoLockTimeoutSeconds() * 1000);
-    };
+    private static reset(): void {
+        AutoLock.lastActivity = Date.now();
+        AutoLock.scheduleLock(LocalStorage.AutoLockTimeoutSeconds() * 1000);
+    }
 
     private static scheduleLock(delay: number): void {
-        if (this.inactivityTimer !== undefined) window.clearTimeout(this.inactivityTimer);
-        if (State.Password !== '') this.inactivityTimer = window.setTimeout(this.checkInactivity, delay);
+        if (AutoLock.inactivityTimer !== undefined) window.clearTimeout(AutoLock.inactivityTimer);
+        if (State.Password !== '') AutoLock.inactivityTimer = window.setTimeout(AutoLock.checkInactivity, delay);
     }
 
-    private static checkInactivity = (): void => {
+    private static checkInactivity(): void {
         if (State.Password === '') return;
-        const remaining = LocalStorage.AutoLockTimeoutSeconds() * 1000 - (Date.now() - this.lastActivity);
-        if (remaining <= 0) this.lock();
-        else this.scheduleLock(remaining);
-    };
+        const remaining = LocalStorage.AutoLockTimeoutSeconds() * 1000 - (Date.now() - AutoLock.lastActivity);
+        if (remaining <= 0) AutoLock.lock();
+        else AutoLock.scheduleLock(remaining);
+    }
 
-    private static onVisibilityChange = (): void => { if (document.visibilityState === 'visible') this.checkInactivity(); };
-    private static onWindowBlur = (): void => { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden') this.checkInactivity(); };
+    private static onVisibilityChange(): void { if (document.visibilityState === 'visible') AutoLock.checkInactivity(); }
+    private static onWindowBlur(): void { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden') AutoLock.checkInactivity(); }
 
     public static stop(clearDeviceUnlock: boolean = true): void {
         if (this.inactivityTimer !== undefined) window.clearTimeout(this.inactivityTimer);
@@ -115,11 +115,11 @@ class AutoLock {
         this.removeElectronListener?.();
         this.removeElectronListener = undefined;
         this.listening = false;
-        ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.removeEventListener(type, this.reset));
-        document.removeEventListener('visibilitychange', this.onVisibilityChange);
-        document.removeEventListener('pause', this.checkInactivity);
-        document.removeEventListener('resume', this.checkInactivity);
-        window.removeEventListener('blur', this.onWindowBlur);
+        ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.removeEventListener(type, AutoLock.reset));
+        document.removeEventListener('visibilitychange', AutoLock.onVisibilityChange);
+        document.removeEventListener('pause', AutoLock.checkInactivity);
+        document.removeEventListener('resume', AutoLock.checkInactivity);
+        window.removeEventListener('blur', AutoLock.onWindowBlur);
     }
 
     public static scheduleClipboardCleanup(secret: string): void {
@@ -144,13 +144,14 @@ class AutoLock {
         } catch (_) { /* Clipboard reads may be denied; preserve whatever is currently copied. */ }
     }
 
-    private static lock = (): void => {
-        if (State.Password === '' || this.locking) return;
-        this.locking = true;
-        void this.lockSession();
-    };
+    private static lock(): void {
+        if (State.Password === '' || AutoLock.locking) return;
+        AutoLock.locking = true;
+        void AutoLock.lockSession();
+    }
 
     private static async lockSession(): Promise<void> {
+        ScenarioController.suspendCurrentScenarioForLock();
         let canUnlockWithDevice = false;
         if (cordova.platformId === 'android') {
             try { canUnlockWithDevice = await DeviceAuth.hasScreenLock(); } catch (_) { /* Master password remains available. */ }
@@ -177,7 +178,7 @@ class AutoLock {
         if (!authenticated) return false;
         this.deviceUnlockPassword = undefined;
         if (!await new AppActions().Unlock(password)) return false;
-        ScenarioController.changeScenario(new PassView());
+        if (!ScenarioController.restoreLockedScenario()) ScenarioController.changeScenario(new PassView());
         return true;
     }
 }

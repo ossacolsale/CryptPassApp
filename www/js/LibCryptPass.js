@@ -10511,8 +10511,7 @@ var LibCryptPass = (() => {
               this._KeyPass.Kdf = Object.assign({ name: "scrypt" }, Common_1.CommonSymEnc.KdfParams);
               this._KeyPass.MasterKChunks = chunks;
               this._KeyPass.LastChange = /* @__PURE__ */ new Date();
-              yield this._KeyPass.SetEntries(JSON.stringify(encEntries));
-              if (yield this._KeyPass.Export())
+              if (yield this._KeyPass.SetEntries(JSON.stringify(encEntries)))
                 return true;
             } catch (_) {
             }
@@ -10554,8 +10553,7 @@ var LibCryptPass = (() => {
               this._KeyPass.FormatVersion = 2;
               this._KeyPass.Kdf = Object.assign({ name: "scrypt" }, Common_1.CommonSymEnc.KdfParams);
               this._KeyPass.MasterKChunks = this.Chunk(this.EncryptMaster(password, salt, key));
-              yield this._KeyPass.SetEntries(JSON.stringify(Common_1.CommonSymEnc.EncryptAead(import_buffer.Buffer.from(key, "hex"), JSON.stringify(entries), "CryptPass:entries:v2")));
-              if (yield this._KeyPass.Export())
+              if (yield this._KeyPass.SetEntries(JSON.stringify(Common_1.CommonSymEnc.EncryptAead(import_buffer.Buffer.from(key, "hex"), JSON.stringify(entries), "CryptPass:entries:v2"))))
                 return true;
             } catch (_) {
             }
@@ -10592,8 +10590,7 @@ var LibCryptPass = (() => {
               this._KeyPass.FormatVersion = 2;
               this._KeyPass.Kdf = Object.assign({ name: "scrypt" }, Common_1.CommonSymEnc.KdfParams);
               this._KeyPass.LastChange = /* @__PURE__ */ new Date();
-              yield this._KeyPass.SetEntries(newEntries);
-              if (yield this._KeyPass.Export())
+              if (yield this._KeyPass.SetEntries(newEntries))
                 return true;
               this._KeyPass.Salt = previous.salt;
               this._KeyPass.MasterKChunks = previous.chunks;
@@ -10697,8 +10694,7 @@ var LibCryptPass = (() => {
         SetEntries(entries_1, password_1) {
           return __awaiter(this, arguments, void 0, function* (entries, password, isK = false) {
             this._EntriesManage.Entries = entries;
-            yield this.setEntries(password, isK);
-            return this._KeyPass.Export();
+            return this.setEntries(password, isK);
           });
         }
         GetEntriesManage(password, isK = false) {
@@ -10725,10 +10721,9 @@ var LibCryptPass = (() => {
                 this._KeyPass.FormatVersion = 2;
                 this._KeyPass.Kdf = Object.assign({ name: "scrypt" }, Common_1.CommonSymEnc.KdfParams);
                 this._KeyPass.MasterKChunks = this.Chunk(this.EncryptMaster(passwordOrK, salt, key));
-                yield this._KeyPass.SetEntries(JSON.stringify(Common_1.CommonSymEnc.EncryptAead(import_buffer.Buffer.from(key, "hex"), JSON.stringify(this._EntriesManage.Export()), "CryptPass:entries:v2")));
-                return;
+                return yield this._KeyPass.SetEntries(JSON.stringify(Common_1.CommonSymEnc.EncryptAead(import_buffer.Buffer.from(key, "hex"), JSON.stringify(this._EntriesManage.Export()), "CryptPass:entries:v2")));
               }
-              yield this._KeyPass.SetEntries(this.MasterEncrypt(passwordOrK, JSON.stringify(this._EntriesManage.Export()), isK));
+              return yield this._KeyPass.SetEntries(this.MasterEncrypt(passwordOrK, JSON.stringify(this._EntriesManage.Export()), isK));
             } catch (_) {
               throw new Error("Vault update failed");
             }
@@ -10746,8 +10741,7 @@ var LibCryptPass = (() => {
           return __awaiter(this, void 0, void 0, function* () {
             this.getEntries(password);
             if (this._EntriesManage.UpdateEntryName(Name, NewName)) {
-              this.setEntries(password);
-              return this._KeyPass.Export();
+              return this.setEntries(password);
             }
             return false;
           });
@@ -10756,8 +10750,7 @@ var LibCryptPass = (() => {
           return __awaiter(this, void 0, void 0, function* () {
             this.getEntries(password);
             if (this._EntriesManage.UpdateEntry(Value)) {
-              this.setEntries(password);
-              return this._KeyPass.Export();
+              return this.setEntries(password);
             }
             return false;
           });
@@ -10766,8 +10759,7 @@ var LibCryptPass = (() => {
           return __awaiter(this, void 0, void 0, function* () {
             this.getEntries(password);
             if (this._EntriesManage.DeleteEntry(Name)) {
-              this.setEntries(password);
-              return this._KeyPass.Export();
+              return this.setEntries(password);
             }
             return false;
           });
@@ -10776,8 +10768,7 @@ var LibCryptPass = (() => {
           return __awaiter(this, void 0, void 0, function* () {
             this.getEntries(password);
             if (this._EntriesManage.AddEntry(Value)) {
-              this.setEntries(password);
-              return this._KeyPass.Export();
+              return this.setEntries(password);
             }
             return false;
           });

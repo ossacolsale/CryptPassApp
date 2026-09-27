@@ -80,6 +80,20 @@ test('Android chooser uses document URIs and keeps cloud providers available', (
     assert.match(saveDialog, /resultData\.getFlags\(\) & allowedFlags/);
 });
 
+test('AutoLock timer callbacks avoid shared static-field aliases in the bundled script', () => {
+    const application = source('src/main.ts');
+    const start = application.indexOf('class AutoLock {');
+    const end = application.indexOf('\nclass DeviceAuth {', start);
+    assert.ok(start >= 0 && end > start, 'AutoLock source should be present');
+    const autoLock = application.slice(start, end);
+    assert.match(autoLock, /private static reset\(\): void/);
+    assert.match(autoLock, /AutoLock\.scheduleLock\(LocalStorage\.AutoLockTimeoutSeconds\(\) \* 1000\)/);
+    assert.doesNotMatch(autoLock, /private static (?:reset|checkInactivity|onVisibilityChange|onWindowBlur|lock)\s*=/);
+    const emitted = ts.transpileModule(autoLock, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    assert.match(emitted, /static scheduleLock\(delay\)/);
+    assert.doesNotMatch(emitted, /_a\.scheduleLock/);
+});
+
 test('legacy vault entry saves use the new password based migration path', () => {
     const passView = source('src/Views/PassView.ts');
     assert.match(passView, /SetEntries\(State\.EntriesManage\.Export\(\),State\.Password\)/);

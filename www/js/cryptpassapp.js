@@ -8,7 +8,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var _a;
 class State {
     static get K() {
         return this.__K_;
@@ -45,9 +44,11 @@ class State {
         this.__EntriesManage_ = null;
         this.__K_ = '';
         this.__Password_ = '';
+        this.UnlockWriteProbe = '';
     }
 }
 State.__K_ = '';
+State.UnlockWriteProbe = '';
 State.__Password_ = '';
 document.addEventListener('deviceready', () => {
     try {
@@ -60,26 +61,43 @@ document.addEventListener('deviceready', () => {
 }, false);
 class AutoLock {
     static start() {
-        var _b, _c;
+        var _a, _b;
         if (!this.listening) {
             this.listening = true;
-            ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, this.reset, { passive: true }));
-            document.addEventListener('visibilitychange', this.onVisibilityChange);
-            document.addEventListener('pause', this.checkInactivity);
-            document.addEventListener('resume', this.checkInactivity);
-            window.addEventListener('blur', this.onWindowBlur);
-            this.removeElectronListener = (_c = (_b = window.cryptPassDesktop) === null || _b === void 0 ? void 0 : _b.onLockRequested) === null || _c === void 0 ? void 0 : _c.call(_b, this.lock);
+            ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, AutoLock.reset, { passive: true }));
+            document.addEventListener('visibilitychange', AutoLock.onVisibilityChange);
+            document.addEventListener('pause', AutoLock.checkInactivity);
+            document.addEventListener('resume', AutoLock.checkInactivity);
+            window.addEventListener('blur', AutoLock.onWindowBlur);
+            this.removeElectronListener = (_b = (_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.onLockRequested) === null || _b === void 0 ? void 0 : _b.call(_a, AutoLock.lock);
         }
-        this.reset();
+        AutoLock.reset();
+    }
+    static reset() {
+        AutoLock.lastActivity = Date.now();
+        AutoLock.scheduleLock(LocalStorage.AutoLockTimeoutSeconds() * 1000);
     }
     static scheduleLock(delay) {
-        if (this.inactivityTimer !== undefined)
-            window.clearTimeout(this.inactivityTimer);
+        if (AutoLock.inactivityTimer !== undefined)
+            window.clearTimeout(AutoLock.inactivityTimer);
         if (State.Password !== '')
-            this.inactivityTimer = window.setTimeout(this.checkInactivity, delay);
+            AutoLock.inactivityTimer = window.setTimeout(AutoLock.checkInactivity, delay);
     }
+    static checkInactivity() {
+        if (State.Password === '')
+            return;
+        const remaining = LocalStorage.AutoLockTimeoutSeconds() * 1000 - (Date.now() - AutoLock.lastActivity);
+        if (remaining <= 0)
+            AutoLock.lock();
+        else
+            AutoLock.scheduleLock(remaining);
+    }
+    static onVisibilityChange() { if (document.visibilityState === 'visible')
+        AutoLock.checkInactivity(); }
+    static onWindowBlur() { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden')
+        AutoLock.checkInactivity(); }
     static stop(clearDeviceUnlock = true) {
-        var _b;
+        var _a;
         if (this.inactivityTimer !== undefined)
             window.clearTimeout(this.inactivityTimer);
         if (this.clipboardTimer !== undefined)
@@ -90,14 +108,14 @@ class AutoLock {
             this.deviceUnlockPassword = undefined;
         this.clipboardTimer = undefined;
         this.copiedSecret = null;
-        (_b = this.removeElectronListener) === null || _b === void 0 ? void 0 : _b.call(this);
+        (_a = this.removeElectronListener) === null || _a === void 0 ? void 0 : _a.call(this);
         this.removeElectronListener = undefined;
         this.listening = false;
-        ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.removeEventListener(type, this.reset));
-        document.removeEventListener('visibilitychange', this.onVisibilityChange);
-        document.removeEventListener('pause', this.checkInactivity);
-        document.removeEventListener('resume', this.checkInactivity);
-        window.removeEventListener('blur', this.onWindowBlur);
+        ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(type => document.removeEventListener(type, AutoLock.reset));
+        document.removeEventListener('visibilitychange', AutoLock.onVisibilityChange);
+        document.removeEventListener('pause', AutoLock.checkInactivity);
+        document.removeEventListener('resume', AutoLock.checkInactivity);
+        window.removeEventListener('blur', AutoLock.onWindowBlur);
     }
     static scheduleClipboardCleanup(secret) {
         if (this.clipboardTimer !== undefined)
@@ -107,7 +125,7 @@ class AutoLock {
     }
     static clearClipboardIfUnchanged() {
         return __awaiter(this, void 0, void 0, function* () {
-            var _b, _c;
+            var _a, _b;
             const secret = this.copiedSecret;
             this.copiedSecret = null;
             if (this.clipboardTimer !== undefined)
@@ -120,7 +138,7 @@ class AutoLock {
                     cordova.plugins.clipboard.paste((value) => { if (value === secret)
                         cordova.plugins.clipboard.copy(''); }, () => undefined);
                 }
-                else if (((_b = navigator.clipboard) === null || _b === void 0 ? void 0 : _b.readText) && ((_c = navigator.clipboard) === null || _c === void 0 ? void 0 : _c.writeText)) {
+                else if (((_a = navigator.clipboard) === null || _a === void 0 ? void 0 : _a.readText) && ((_b = navigator.clipboard) === null || _b === void 0 ? void 0 : _b.writeText)) {
                     const current = yield navigator.clipboard.readText();
                     if (current === secret)
                         yield navigator.clipboard.writeText('');
@@ -128,6 +146,12 @@ class AutoLock {
             }
             catch (_) { }
         });
+    }
+    static lock() {
+        if (State.Password === '' || AutoLock.locking)
+            return;
+        AutoLock.locking = true;
+        void AutoLock.lockSession();
     }
     static lockSession() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -174,35 +198,11 @@ class AutoLock {
         });
     }
 }
-_a = AutoLock;
 AutoLock.clipboardClearMs = 60 * 1000;
 AutoLock.lastActivity = 0;
 AutoLock.locking = false;
 AutoLock.copiedSecret = null;
 AutoLock.listening = false;
-AutoLock.reset = () => {
-    _a.lastActivity = Date.now();
-    _a.scheduleLock(LocalStorage.AutoLockTimeoutSeconds() * 1000);
-};
-AutoLock.checkInactivity = () => {
-    if (State.Password === '')
-        return;
-    const remaining = LocalStorage.AutoLockTimeoutSeconds() * 1000 - (Date.now() - _a.lastActivity);
-    if (remaining <= 0)
-        _a.lock();
-    else
-        _a.scheduleLock(remaining);
-};
-AutoLock.onVisibilityChange = () => { if (document.visibilityState === 'visible')
-    _a.checkInactivity(); };
-AutoLock.onWindowBlur = () => { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden')
-    _a.checkInactivity(); };
-AutoLock.lock = () => {
-    if (State.Password === '' || _a.locking)
-        return;
-    _a.locking = true;
-    void _a.lockSession();
-};
 class DeviceAuth {
     static call(action) {
         return new Promise((resolve, reject) => cordova.exec((result) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', action, []));
@@ -222,36 +222,42 @@ class DeviceAuth {
 class AppActions {
     Unlock(pwd) {
         return __awaiter(this, void 0, void 0, function* () {
-            const data = yield Config.readData();
-            State.CryptPass = new LibCryptPass.CryptPassCached(StandardRnW, data.kp, data.se);
-            const k = State.CryptPass.GetK(pwd);
+            let data;
+            try {
+                data = yield Config.readData();
+            }
+            catch (error) {
+                throw new Error(this.unlockDiagnostic('load-vault', undefined, undefined, error));
+            }
+            try {
+                State.CryptPass = new LibCryptPass.CryptPassCached(StandardRnW, data.kp, data.se);
+            }
+            catch (error) {
+                throw new Error(this.unlockDiagnostic('initialize-reader', data.kp, data.se, error));
+            }
+            let k;
+            try {
+                k = State.CryptPass.GetK(pwd);
+            }
+            catch (error) {
+                throw new Error(this.unlockDiagnostic('derive-key', data.kp, data.se, error));
+            }
             if (k) {
                 State.K = k;
+                let writeProbe;
+                try {
+                    writeProbe = yield Config.probeVaultWriteOnce();
+                }
+                catch (error) {
+                    writeProbe = { status: 'probe-threw', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null, failureType: error instanceof Error ? error.name : typeof error };
+                }
+                State.UnlockWriteProbe = JSON.stringify(writeProbe);
                 try {
                     State.EntriesManage = State.CryptPass.GetEntriesManage(State.K, true);
                 }
                 catch (error) {
-                    const keyPass = data.kp;
-                    const formatVersion = keyPass && keyPass.Key ? keyPass.Key.FormatVersion : undefined;
-                    const entries = keyPass && keyPass.Pass ? keyPass.Pass.Entries : undefined;
-                    const entriesLength = typeof entries === 'string' ? entries.length : 0;
-                    let envelopeType = 'legacy-or-invalid';
-                    if (typeof entries === 'string') {
-                        try {
-                            const envelope = JSON.parse(entries);
-                            if (envelope && envelope.v === 2 && envelope.alg === 'A256GCM')
-                                envelopeType = 'aead-v2';
-                            else if (envelope && typeof envelope === 'object')
-                                envelopeType = 'json-other';
-                        }
-                        catch (_) {
-                            envelopeType = 'non-json';
-                        }
-                    }
-                    const format = formatVersion === 2 ? 'v2' : 'legacy';
-                    const failure = error instanceof Error && error.message === 'Decryption failed' ? 'decrypt' : 'parse-or-structure';
-                    const diagnostic = 'UNLOCK_DIAG|' + format + '|' + envelopeType + '|' + entriesLength + '|' + failure;
-                    console.error('Key derivation returned a value, but decrypting/parsing Pass.Entries failed.', { formatVersion: formatVersion === undefined ? 1 : formatVersion, envelopeType: envelopeType, entriesLength: entriesLength, failure: failure, error: error });
+                    const diagnostic = this.unlockDiagnostic('decrypt-entries', data.kp, data.se, error, writeProbe);
+                    console.error('Key derivation succeeded, but decrypting/parsing Pass.Entries failed.', diagnostic);
                     State.CryptPass = null;
                     State.EntriesManage = null;
                     State.K = '';
@@ -266,6 +272,50 @@ class AppActions {
                 State.Password = '';
                 return false;
             }
+        });
+    }
+    unlockDiagnostic(phase, keyPassData, sequenceData, error, writeProbe) {
+        var _a;
+        const keyPass = keyPassData && typeof keyPassData === 'object' ? keyPassData : undefined;
+        const key = keyPass === null || keyPass === void 0 ? void 0 : keyPass.Key;
+        const entries = (_a = keyPass === null || keyPass === void 0 ? void 0 : keyPass.Pass) === null || _a === void 0 ? void 0 : _a.Entries;
+        let envelope;
+        if (typeof entries === 'string') {
+            try {
+                const parsed = JSON.parse(entries);
+                if (parsed && typeof parsed === 'object')
+                    envelope = parsed;
+            }
+            catch (_) { }
+        }
+        const sequence = sequenceData && typeof sequenceData === 'object'
+            ? sequenceData.Sequence : undefined;
+        const errorName = error instanceof Error ? error.name : typeof error;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const failure = errorMessage === 'Decryption failed' ? 'authentication-or-decryption'
+            : error instanceof SyntaxError ? 'plaintext-json-parse'
+                : 'library-or-input-structure';
+        return 'UNLOCK_DIAG|' + JSON.stringify({
+            version: 1,
+            phase: phase,
+            keyDerivation: phase === 'decrypt-entries' ? 'success' : 'not-completed',
+            temporaryWriteProbe: writeProbe,
+            vaultFormat: (key === null || key === void 0 ? void 0 : key.FormatVersion) === undefined ? 'legacy' : key.FormatVersion,
+            kdf: (key === null || key === void 0 ? void 0 : key.Kdf) && { name: key.Kdf.name, N: key.Kdf.N, r: key.Kdf.r, p: key.Kdf.p },
+            masterKeyChunks: Array.isArray(key === null || key === void 0 ? void 0 : key.MasterKChunks) ? key === null || key === void 0 ? void 0 : key.MasterKChunks.length : 0,
+            sequenceItems: Array.isArray(sequence) ? sequence.length : 0,
+            entriesChars: typeof entries === 'string' ? entries.length : null,
+            envelope: envelope ? {
+                version: envelope.v,
+                algorithm: envelope.alg,
+                nonceChars: typeof envelope.nonce === 'string' ? envelope.nonce.length : null,
+                ciphertextChars: typeof envelope.ciphertext === 'string' ? envelope.ciphertext.length : null,
+                tagChars: typeof envelope.tag === 'string' ? envelope.tag.length : null
+            } : typeof entries === 'string' ? 'non-json' : 'missing-or-non-string',
+            failure: failure,
+            errorType: errorName,
+            libraryError: errorMessage === 'Decryption failed' || errorMessage === 'Invalid sequence' || errorMessage === 'Invalid key data'
+                ? errorMessage : undefined
         });
     }
 }
@@ -384,6 +434,14 @@ class Config {
             }
             else
                 return false;
+        });
+    }
+    static probeVaultWriteOnce() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const kpPath = yield this.getKeyPassPath();
+            if (kpPath === false)
+                return { status: 'vault-path-unavailable', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null };
+            return FS.ProbeWriteFileOnce(kpPath);
         });
     }
     static writeKeyPass(kp) {
@@ -1070,6 +1128,70 @@ class AndroidFS {
             }
         });
     }
+    static ProbeWriteFileOnce(uri) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const marker = 'cryptPassTemporaryUnlockWriteProbe:v1';
+            const previous = window.localStorage.getItem(marker);
+            if (previous) {
+                try {
+                    return Object.assign(Object.assign({}, JSON.parse(previous)), { reused: true });
+                }
+                catch (_) { }
+            }
+            const original = yield this.ReadFile(uri);
+            if (original === false) {
+                const result = { status: 'read-before-write-failed', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null };
+                window.localStorage.setItem(marker, JSON.stringify(result));
+                return result;
+            }
+            const expected = ' ' + original;
+            const liveUri = yield this.resolveUri(uri);
+            if (liveUri === false) {
+                const result = { status: 'resolve-document-failed', originalChars: original.length, expectedChars: expected.length, actualChars: null, writeVerified: false, restored: null };
+                window.localStorage.setItem(marker, JSON.stringify(result));
+                return result;
+            }
+            window.localStorage.setItem(uri, original);
+            let failureType;
+            try {
+                yield cordova.plugins.saveDialog.saveFileByUri(new Blob([expected], { type: defaultMimeType }), liveUri);
+            }
+            catch (error) {
+                failureType = error instanceof Error ? error.name : typeof error;
+            }
+            let afterWrite = false;
+            try {
+                afterWrite = yield this.ReadFile(uri);
+            }
+            catch (_) { }
+            const writeVerified = afterWrite === expected;
+            let restoreFailureType;
+            try {
+                yield cordova.plugins.saveDialog.saveFileByUri(new Blob([original], { type: defaultMimeType }), liveUri);
+            }
+            catch (error) {
+                restoreFailureType = error instanceof Error ? error.name : typeof error;
+            }
+            let restoredContent = false;
+            try {
+                restoredContent = yield this.ReadFile(uri);
+            }
+            catch (_) { }
+            const restored = restoredContent === original;
+            const result = {
+                status: restored ? (writeVerified ? 'write-verified-and-restored' : 'write-not-verified-and-restored') : 'restore-failed-recovery-copy-kept',
+                originalChars: original.length,
+                expectedChars: expected.length,
+                actualChars: afterWrite === false ? null : afterWrite.length,
+                writeVerified: writeVerified,
+                restored: restored,
+                failureType: failureType,
+                restoreFailureType: restoreFailureType
+            };
+            window.localStorage.setItem(marker, JSON.stringify(result));
+            return result;
+        });
+    }
     static WriteFile(uri, fileContent) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
@@ -1138,6 +1260,13 @@ class FS {
                 default:
                     return false;
             }
+        });
+    }
+    static ProbeWriteFileOnce(uri) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (cordova.platformId !== 'android')
+                return { status: 'unsupported-platform', originalChars: null, expectedChars: null, actualChars: null, writeVerified: false, restored: null };
+            return AndroidFS.ProbeWriteFileOnce(uri);
         });
     }
     static WriteFile(uri, fileContent) {
@@ -1796,16 +1925,23 @@ class MainView extends View {
                 }
                 catch (error) {
                     console.error('Wallet unlock failed', error);
-                    const diagnostic = error instanceof Error ? error.message.split('|') : [];
-                    const isLegacy = diagnostic.length > 1 && diagnostic[0] === 'UNLOCK_DIAG' && diagnostic[1] === 'legacy';
-                    const message = isLegacy ? 'main.unlockLegacyError' : 'main.unlockError';
-                    const details = diagnostic.length === 5 && diagnostic[0] === 'UNLOCK_DIAG'
-                        ? `Diagnostica: vault=${diagnostic[1]}, voci=${diagnostic[2]}, cifrato=${diagnostic[3]} caratteri, errore=${diagnostic[4]}.\n\n`
-                        : '';
-                    alert(details + Localization.text(message));
+                    const diagnostic = error instanceof Error ? error.message : String(error);
+                    let isLegacy = false;
+                    if (diagnostic.startsWith('UNLOCK_DIAG|')) {
+                        try {
+                            const payload = JSON.parse(diagnostic.slice('UNLOCK_DIAG|'.length));
+                            isLegacy = payload.vaultFormat === 'legacy' || payload.vaultFormat === 1;
+                        }
+                        catch (_) { }
+                    }
+                    this.showUnlockDiagnostic(Localization.text(isLegacy ? 'main.unlockLegacyError' : 'main.unlockError'), diagnostic);
                     return false;
                 }
                 if (pwdCorrect) {
+                    if (State.UnlockWriteProbe) {
+                        alert(Localization.text('main.temporaryWriteProbe') + ': ' + State.UnlockWriteProbe);
+                        State.UnlockWriteProbe = '';
+                    }
                     yield this.Init();
                     return true;
                 }
@@ -1814,6 +1950,49 @@ class MainView extends View {
             }), (res) => { if (!res)
                 this.focusPassword(true); });
         });
+    }
+    showUnlockDiagnostic(message, diagnostic) {
+        var _a;
+        const app = this.getEl(this.IdAppDiv);
+        (_a = app.querySelector('#UnlockDiagnostic')) === null || _a === void 0 ? void 0 : _a.remove();
+        const panel = document.createElement('section');
+        panel.id = 'UnlockDiagnostic';
+        panel.className = 'alert alert-danger mt-3';
+        panel.setAttribute('role', 'alert');
+        panel.setAttribute('aria-live', 'assertive');
+        const heading = document.createElement('h2');
+        heading.className = 'h5';
+        heading.textContent = message;
+        panel.appendChild(heading);
+        const explanation = document.createElement('p');
+        explanation.textContent = Localization.text('main.diagnosticExplanation');
+        panel.appendChild(explanation);
+        const details = document.createElement('pre');
+        details.className = 'small text-break mb-2';
+        details.style.whiteSpace = 'pre-wrap';
+        details.textContent = diagnostic;
+        panel.appendChild(details);
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = this.ClassFormBtn;
+        copy.textContent = Localization.text('main.copyDiagnostic');
+        copy.addEventListener('click', () => {
+            var _a, _b, _c;
+            const copied = () => { copy.textContent = Localization.text('main.diagnosticCopied'); };
+            const failed = () => { copy.textContent = Localization.text('main.diagnosticCopyFailed'); };
+            if (cordova.platformId === 'android' && ((_b = (_a = cordova.plugins) === null || _a === void 0 ? void 0 : _a.clipboard) === null || _b === void 0 ? void 0 : _b.copy)) {
+                cordova.plugins.clipboard.copy(diagnostic, copied, failed);
+            }
+            else if ((_c = navigator.clipboard) === null || _c === void 0 ? void 0 : _c.writeText) {
+                void navigator.clipboard.writeText(diagnostic).then(copied, failed);
+            }
+            else {
+                failed();
+            }
+        });
+        panel.appendChild(copy);
+        app.appendChild(panel);
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
     focusPassword(select) {
         this.focusEl(this.IdPassword1, select);

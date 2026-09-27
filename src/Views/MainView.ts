@@ -168,23 +168,70 @@ class MainView extends View {
                     pwdCorrect = await this._aa.Unlock(pwd);
                 } catch (error) {
                     console.error('Wallet unlock failed', error);
-                    const diagnostic = error instanceof Error ? error.message.split('|') : [];
-                    const isLegacy = diagnostic.length > 1 && diagnostic[0] === 'UNLOCK_DIAG' && diagnostic[1] === 'legacy';
-                    const message = isLegacy ? 'main.unlockLegacyError' : 'main.unlockError';
-                    const details = diagnostic.length === 5 && diagnostic[0] === 'UNLOCK_DIAG'
-                        ? `Diagnostica: vault=${diagnostic[1]}, voci=${diagnostic[2]}, cifrato=${diagnostic[3]} caratteri, errore=${diagnostic[4]}.\n\n`
-                        : '';
-                    alert(details + Localization.text(message));
+                    const diagnostic = error instanceof Error ? error.message : String(error);
+                    let isLegacy = false;
+                    if (diagnostic.startsWith('UNLOCK_DIAG|')) {
+                        try {
+                            const payload = JSON.parse(diagnostic.slice('UNLOCK_DIAG|'.length)) as { vaultFormat?: unknown };
+                            isLegacy = payload.vaultFormat === 'legacy' || payload.vaultFormat === 1;
+                        } catch (_) { /* Show the raw diagnostic if an older or malformed build produced it. */ }
+                    }
+                    this.showUnlockDiagnostic(Localization.text(isLegacy ? 'main.unlockLegacyError' : 'main.unlockError'), diagnostic);
                     return false;
                 }
                 if (pwdCorrect) {
-                    await this.Init();
+                    if (!ScenarioController.restoreLockedScenario()) await this.Init();
                     return true;
                 }
                 alert(Localization.text('main.wrongPassword'));
                 return false;
             }, (res) => { if (!res) this.focusPassword(true); }
         );
+    }
+
+    private showUnlockDiagnostic(message: string, diagnostic: string): void {
+        const app = this.getEl(this.IdAppDiv);
+        app.querySelector('#UnlockDiagnostic')?.remove();
+
+        const panel = document.createElement('section');
+        panel.id = 'UnlockDiagnostic';
+        panel.className = 'alert alert-danger mt-3';
+        panel.setAttribute('role', 'alert');
+        panel.setAttribute('aria-live', 'assertive');
+
+        const heading = document.createElement('h2');
+        heading.className = 'h5';
+        heading.textContent = message;
+        panel.appendChild(heading);
+
+        const explanation = document.createElement('p');
+        explanation.textContent = Localization.text('main.diagnosticExplanation');
+        panel.appendChild(explanation);
+
+        const details = document.createElement('pre');
+        details.className = 'small text-break mb-2';
+        details.style.whiteSpace = 'pre-wrap';
+        details.textContent = diagnostic;
+        panel.appendChild(details);
+
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = this.ClassFormBtn;
+        copy.textContent = Localization.text('main.copyDiagnostic');
+        copy.addEventListener('click', () => {
+            const copied = (): void => { copy.textContent = Localization.text('main.diagnosticCopied'); };
+            const failed = (): void => { copy.textContent = Localization.text('main.diagnosticCopyFailed'); };
+            if (cordova.platformId === 'android' && cordova.plugins?.clipboard?.copy) {
+                cordova.plugins.clipboard.copy(diagnostic, copied, failed);
+            } else if (navigator.clipboard?.writeText) {
+                void navigator.clipboard.writeText(diagnostic).then(copied, failed);
+            } else {
+                failed();
+            }
+        });
+        panel.appendChild(copy);
+        app.appendChild(panel);
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     private focusPassword(select: boolean): void {

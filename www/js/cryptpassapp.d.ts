@@ -2,6 +2,7 @@ declare class State {
     private static __K_;
     static get K(): string;
     static set K(value: string);
+    static UnlockWriteProbe: string;
     private static __Password_;
     static get Password(): string;
     static set Password(value: string);
@@ -45,6 +46,7 @@ declare class DeviceAuth {
 }
 declare class AppActions {
     Unlock(pwd: string): Promise<boolean>;
+    private unlockDiagnostic;
 }
 interface config {
     KeyFilePath: string;
@@ -78,6 +80,16 @@ declare class Config {
     static writeSequence(seq: {}): Promise<boolean>;
     protected static getKeyPassPath(): Promise<string | false>;
     static readKeyPass(): Promise<{} | false>;
+    static probeVaultWriteOnce(): Promise<{
+        status: string;
+        originalChars: number | null;
+        expectedChars: number | null;
+        actualChars: number | null;
+        writeVerified: boolean;
+        restored: boolean | null;
+        reused?: boolean;
+        failureType?: string;
+    }>;
     static writeKeyPass(kp: {}): Promise<boolean>;
     static newKeyPass(kp?: {}): Promise<boolean>;
     static selectKeyPassFiles(): Promise<Array<{
@@ -220,12 +232,32 @@ declare class AndroidFS {
     private static selectVaultFolder;
     private static resolveUri;
     static NewFile(defaultFileName: string, fileContent: string): Promise<string | false>;
+    static ProbeWriteFileOnce(uri: string): Promise<{
+        status: string;
+        originalChars: number | null;
+        expectedChars: number | null;
+        actualChars: number | null;
+        writeVerified: boolean;
+        restored: boolean | null;
+        reused?: boolean;
+        failureType?: string;
+    }>;
     static WriteFile(uri: string, fileContent: string): Promise<boolean>;
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
 declare class FS {
     static NewFile(fileName: string, fileContent: string): Promise<string | false>;
+    static ProbeWriteFileOnce(uri: string): Promise<{
+        status: string;
+        originalChars: number | null;
+        expectedChars: number | null;
+        actualChars: number | null;
+        writeVerified: boolean;
+        restored: boolean | null;
+        reused?: boolean;
+        failureType?: string;
+    }>;
     static WriteFile(uri: string, fileContent: string): Promise<boolean>;
     static ReadFileBackup(uri: string): string | null;
     static ReadFile(uri: string): Promise<string | false>;
@@ -364,6 +396,7 @@ declare class MainView extends View {
     protected onSubmit(e: Event): Promise<void>;
     protected onClick(e: Event): Promise<void>;
     protected handlePwd(): Promise<void>;
+    private showUnlockDiagnostic;
     private focusPassword;
     protected handleDontChPwd(): void;
     Handlers: EventHandlerModel[];
