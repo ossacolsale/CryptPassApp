@@ -116,7 +116,7 @@ class AutoLock {
             document.addEventListener('visibilitychange', AutoLock.onVisibilityChange);
             document.addEventListener('pause', AutoLock.checkInactivity);
             document.addEventListener('resume', AutoLock.checkInactivity);
-            window.addEventListener('blur', AutoLock.onWindowBlur);
+            if (cordova.platformId === 'electron') window.addEventListener('focus', AutoLock.onWindowFocus);
             this.removeElectronListener = window.cryptPassDesktop?.onLockRequested?.(AutoLock.lock);
         }
         AutoLock.reset();
@@ -140,7 +140,7 @@ class AutoLock {
     }
 
     private static onVisibilityChange(): void { if (document.visibilityState === 'visible') AutoLock.checkInactivity(); }
-    private static onWindowBlur(): void { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden') AutoLock.checkInactivity(); }
+    private static onWindowFocus(): void { AutoLock.checkInactivity(); }
 
     public static stop(clearDeviceUnlock: boolean = true): void {
         if (this.inactivityTimer !== undefined) window.clearTimeout(this.inactivityTimer);
@@ -157,7 +157,7 @@ class AutoLock {
         document.removeEventListener('visibilitychange', AutoLock.onVisibilityChange);
         document.removeEventListener('pause', AutoLock.checkInactivity);
         document.removeEventListener('resume', AutoLock.checkInactivity);
-        window.removeEventListener('blur', AutoLock.onWindowBlur);
+        if (cordova.platformId === 'electron') window.removeEventListener('focus', AutoLock.onWindowFocus);
     }
 
     public static scheduleClipboardCleanup(secret: string): void {

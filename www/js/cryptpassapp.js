@@ -107,7 +107,8 @@ class AutoLock {
             document.addEventListener('visibilitychange', AutoLock.onVisibilityChange);
             document.addEventListener('pause', AutoLock.checkInactivity);
             document.addEventListener('resume', AutoLock.checkInactivity);
-            window.addEventListener('blur', AutoLock.onWindowBlur);
+            if (cordova.platformId === 'electron')
+                window.addEventListener('focus', AutoLock.onWindowFocus);
             this.removeElectronListener = (_b = (_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.onLockRequested) === null || _b === void 0 ? void 0 : _b.call(_a, AutoLock.lock);
         }
         AutoLock.reset();
@@ -133,8 +134,7 @@ class AutoLock {
     }
     static onVisibilityChange() { if (document.visibilityState === 'visible')
         AutoLock.checkInactivity(); }
-    static onWindowBlur() { if (cordova.platformId === 'electron' && document.visibilityState === 'hidden')
-        AutoLock.checkInactivity(); }
+    static onWindowFocus() { AutoLock.checkInactivity(); }
     static stop(clearDeviceUnlock = true) {
         var _a;
         if (this.inactivityTimer !== undefined)
@@ -154,7 +154,8 @@ class AutoLock {
         document.removeEventListener('visibilitychange', AutoLock.onVisibilityChange);
         document.removeEventListener('pause', AutoLock.checkInactivity);
         document.removeEventListener('resume', AutoLock.checkInactivity);
-        window.removeEventListener('blur', AutoLock.onWindowBlur);
+        if (cordova.platformId === 'electron')
+            window.removeEventListener('focus', AutoLock.onWindowFocus);
     }
     static scheduleClipboardCleanup(secret) {
         if (this.clipboardTimer !== undefined)
@@ -868,7 +869,7 @@ class ScenarioController {
         this.closeScenario();
         this._currentScenario = scenario;
         this.attachHandlers(this._currentScenario);
-        this._currentScenario.Init(initOptions);
+        return Promise.resolve(this._currentScenario.Init(initOptions)).then(() => undefined);
     }
     static suspendCurrentScenarioForLock() {
         const app = document.getElementById('app');
@@ -1041,12 +1042,25 @@ class View {
         return raw ? val : val.trim();
     }
     focusEl(elId, alsoSelect = false) {
-        const input = this.getEl(elId);
-        input.focus();
-        const len = input.value.length;
-        input.setSelectionRange(len, len);
-        if (alsoSelect)
-            this.getEl(elId).select();
+        var _a;
+        const focus = () => {
+            const input = this.getEl(elId);
+            if (!input)
+                return;
+            input.focus({ preventScroll: true });
+            try {
+                const len = input.value.length;
+                input.setSelectionRange(len, len);
+                if (alsoSelect)
+                    input.select();
+            }
+            catch (_) { }
+        };
+        if (cordova.platformId === 'electron' && ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.focusWindow)) {
+            void window.cryptPassDesktop.focusWindow().then(focus, focus);
+        }
+        else
+            focus();
     }
     LoaderShowCommands() {
         this.getEl(this.IdAppDiv).style.display = 'none';
@@ -1108,31 +1122,59 @@ class View {
             currentDate = Date.now();
         } while (currentDate - date < milliseconds);
     }
+    showInlineFormError(message) {
+        var _a;
+        const form = document.querySelector('form');
+        if (!form)
+            return;
+        (_a = form.querySelector('#PasswordValidationError')) === null || _a === void 0 ? void 0 : _a.remove();
+        const error = document.createElement('div');
+        error.id = 'PasswordValidationError';
+        error.className = 'alert alert-warning';
+        error.setAttribute('role', 'alert');
+        error.textContent = message;
+        form.prepend(error);
+    }
     handleChPwd(idpwdold, idpwdnew1, idpwdnew2, onsuccess, pwdChanger) {
         return __awaiter(this, void 0, void 0, function* () {
             const old = this.getVal(idpwdold, true);
             const pwd1 = this.getVal(idpwdnew1, true);
-            const check = CommonHelpers.CheckChPassword(old, pwd1, this.getVal(idpwdnew2, true));
+            const pwd2 = this.getVal(idpwdnew2, true);
+            const isElectron = cordova.platformId === 'electron';
+            const check = CommonHelpers.CheckChPassword(old, pwd1, pwd2, !isElectron);
             switch (check) {
                 case true:
-                    yield this.LoaderShowAsync(() => __awaiter(this, void 0, void 0, function* () {
-                        const done = yield pwdChanger(old, pwd1);
-                        if (done) {
-                            alert('Password correctly changed');
-                            onsuccess();
-                            return true;
+                    yield this.LoaderShowAsync(() => __awaiter(this, void 0, void 0, function* () { return yield pwdChanger(old, pwd1); }), (res) => __awaiter(this, void 0, void 0, function* () {
+                        if (res) {
+                            if (!isElectron)
+                                alert('Password correctly changed');
+                            yield onsuccess();
                         }
                         else {
-                            alert('Something\'s gone wrong. Please retry');
-                            return false;
+                            if (isElectron)
+                                this.showInlineFormError(Localization.text('alert.operationFailed'));
+                            else
+                                alert('Something\'s gone wrong. Please retry');
+                            this.focusEl(idpwdnew1, true);
                         }
-                    }), (res) => { if (!res)
-                        this.focusEl(idpwdnew1, true); });
+                    }));
                     break;
                 case 'wrongNew':
+                    if (isElectron) {
+                        let message = 'alert.passwordMismatch';
+                        if (old === pwd1 || old === pwd2)
+                            message = 'alert.passwordSame';
+                        else if (pwd1 === '' && pwd2 === '')
+                            message = 'alert.passwordRequired';
+                        else if (pwd1.length < 10)
+                            message = 'alert.passwordShort';
+                        this.showInlineFormError(Localization.text(message));
+                    }
                     this.focusEl(idpwdnew1, true);
                     break;
                 case 'wrongOld':
+                    if (isElectron)
+                        this.showInlineFormError(Localization.text('alert.oldPasswordWrong'));
                     this.focusEl(idpwdold, true);
                     break;
             }
@@ -1507,33 +1549,38 @@ class CommonHelpers {
     static CustomError(msg) {
         return false;
     }
-    static CheckNewPassword(pwd1, pwd2) {
+    static CheckNewPassword(pwd1, pwd2, showAlerts = true) {
         let ok = false;
         if (pwd1 == '' && pwd2 == '') {
-            alert('You have to type passwords before proceeding');
+            if (showAlerts)
+                alert('You have to type passwords before proceeding');
         }
         else if (pwd1.length < 10) {
-            alert('Have you really typed a less than 10 characters password?');
+            if (showAlerts)
+                alert('Have you really typed a less than 10 characters password?');
         }
         else if (pwd1 != pwd2) {
-            alert('Passwords don\'t match!');
+            if (showAlerts)
+                alert('Passwords don\'t match!');
         }
         else {
             ok = true;
         }
         return ok;
     }
-    static CheckChPassword(oldpwd, pwd1, pwd2) {
+    static CheckChPassword(oldpwd, pwd1, pwd2, showAlerts = true) {
         if (oldpwd !== State.Password) {
-            alert('Old password is wrong, please retype');
+            if (showAlerts)
+                alert('Old password is wrong, please retype');
             return 'wrongOld';
         }
         else if (oldpwd == pwd1 || oldpwd == pwd2) {
-            alert('New password must be different from old');
+            if (showAlerts)
+                alert('New password must be different from old');
             return 'wrongNew';
         }
         else {
-            return this.CheckNewPassword(pwd1, pwd2) ? true : 'wrongNew';
+            return this.CheckNewPassword(pwd1, pwd2, showAlerts) ? true : 'wrongNew';
         }
     }
 }
@@ -1890,7 +1937,7 @@ class MainView extends View {
                         </form>
                         `);
                             if (!deviceUnlockRequired)
-                                this.focusPassword(true);
+                                this.focusPassword(true, cordova.platformId === 'electron');
                         }
                     }
                     catch (e) {
@@ -1925,10 +1972,10 @@ class MainView extends View {
         return __awaiter(this, void 0, void 0, function* () {
             switch (e.target.id) {
                 case this.IdUnlockForm:
-                    this.handlePwd();
+                    yield this.handlePwd();
                     break;
                 case this.IdChPwdForm:
-                    this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => this.Init(), (Old, New) => __awaiter(this, void 0, void 0, function* () { return yield this._ca.changePwd(Old, New); }));
+                    yield this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => this.Init(), (Old, New) => __awaiter(this, void 0, void 0, function* () { return yield this._ca.changePwd(Old, New); }));
                     break;
             }
         });
@@ -1963,10 +2010,9 @@ class MainView extends View {
     handlePwd() {
         return __awaiter(this, void 0, void 0, function* () {
             yield this.LoaderShowAsync(() => __awaiter(this, void 0, void 0, function* () {
-                var _a;
                 const pwd = this.getEl(this.IdPassword1).value;
                 if (pwd.length < 10) {
-                    alert(Localization.text('main.wrongPassword'));
+                    this.showWrongPassword();
                     return false;
                 }
                 let pwdCorrect;
@@ -1992,24 +2038,27 @@ class MainView extends View {
                         yield this.Init();
                     return true;
                 }
-                if (cordova.platformId === 'electron') {
-                    const form = this.getEl(this.IdUnlockForm);
-                    (_a = form.querySelector('#UnlockPasswordError')) === null || _a === void 0 ? void 0 : _a.remove();
-                    const message = document.createElement('div');
-                    message.id = 'UnlockPasswordError';
-                    message.className = 'alert alert-warning';
-                    message.setAttribute('role', 'alert');
-                    message.textContent = Localization.text('main.wrongPassword');
-                    form.prepend(message);
-                    this.getEl(this.IdPassword1).value = '';
-                }
-                else {
-                    alert(Localization.text('main.wrongPassword'));
-                }
+                this.showWrongPassword();
                 return false;
             }), (res) => { if (!res)
                 this.focusPassword(true, cordova.platformId === 'electron'); });
         });
+    }
+    showWrongPassword() {
+        var _a;
+        if (cordova.platformId !== 'electron') {
+            alert(Localization.text('main.wrongPassword'));
+            return;
+        }
+        const form = this.getEl(this.IdUnlockForm);
+        (_a = form.querySelector('#UnlockPasswordError')) === null || _a === void 0 ? void 0 : _a.remove();
+        const message = document.createElement('div');
+        message.id = 'UnlockPasswordError';
+        message.className = 'alert alert-warning';
+        message.setAttribute('role', 'alert');
+        message.textContent = Localization.text('main.wrongPassword');
+        form.prepend(message);
+        this.getEl(this.IdPassword1).value = '';
     }
     showUnlockDiagnostic(message, diagnostic) {
         var _a;
@@ -2054,6 +2103,9 @@ class MainView extends View {
         app.appendChild(panel);
         panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
+    reactivateUnlockPassword() {
+        this.focusPassword(true, cordova.platformId === 'electron');
+    }
     focusPassword(select, reset = false) {
         if (cordova.platformId !== 'electron') {
             this.focusEl(this.IdPassword1, select);
@@ -2061,6 +2113,7 @@ class MainView extends View {
             return;
         }
         window.requestAnimationFrame(() => window.setTimeout(() => {
+            var _a;
             let input = this.getEl(this.IdPassword1);
             if (!input)
                 return;
@@ -2070,17 +2123,29 @@ class MainView extends View {
                 replacement.id = input.id;
                 replacement.className = input.className;
                 replacement.placeholder = input.placeholder;
-                replacement.autocomplete = 'current-password';
-                replacement.disabled = false;
-                replacement.readOnly = false;
+                replacement.name = 'cryptpass-unlock-password';
+                replacement.autocomplete = 'off';
+                replacement.spellcheck = false;
+                replacement.tabIndex = 0;
+                replacement.removeAttribute('disabled');
+                replacement.removeAttribute('readonly');
+                input.blur();
                 input.replaceWith(replacement);
                 input = replacement;
             }
+            input.removeAttribute('disabled');
+            input.removeAttribute('readonly');
             input.disabled = false;
             input.readOnly = false;
-            input.focus({ preventScroll: true });
-            if (select)
-                input.select();
+            const focusInput = () => {
+                const activeInput = this.getEl(this.IdPassword1);
+                if (!activeInput)
+                    return;
+                activeInput.focus({ preventScroll: true });
+                if (select)
+                    activeInput.select();
+            };
+            void ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.focusWindow().then(() => window.requestAnimationFrame(focusInput), () => window.requestAnimationFrame(focusInput)));
         }, 0));
     }
     handleDontChPwd() {
@@ -2213,7 +2278,7 @@ class OtherView extends View {
         return __awaiter(this, void 0, void 0, function* () {
             switch (e.target.id) {
                 case this.IdChPwdForm:
-                    this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => ScenarioController.changeScenario(new MainView()), (Old, New) => __awaiter(this, void 0, void 0, function* () { return yield this._ca.changePwd(Old, New); }));
+                    yield this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => ScenarioController.changeScenario(new MainView()), (Old, New) => __awaiter(this, void 0, void 0, function* () { return yield this._ca.changePwd(Old, New); }));
                     break;
             }
         });
@@ -2317,6 +2382,9 @@ class PassView extends View {
         super(...arguments);
         this.IdGoToInit = 'goToInit';
         this.IdLogout = 'goToMainMenu';
+        this.IdConfirmLogout = 'ConfirmLogout';
+        this.IdCancelLogout = 'CancelLogout';
+        this.IdLogoutPrompt = 'LogoutPrompt';
         this.IdOtherOptions = 'goToOtherOptions';
         this.IdEntriesList = 'entries';
         this.IdNewEntry = 'newEntry';
@@ -2513,18 +2581,52 @@ class PassView extends View {
             }
         });
     }
+    showLogoutConfirmation() {
+        var _a;
+        const app = this.getEl(this.IdAppDiv);
+        (_a = app.querySelector(`#${this.IdLogoutPrompt}`)) === null || _a === void 0 ? void 0 : _a.remove();
+        const prompt = document.createElement('section');
+        prompt.id = this.IdLogoutPrompt;
+        prompt.className = 'alert alert-warning';
+        prompt.setAttribute('role', 'alert');
+        const message = document.createElement('p');
+        message.textContent = Localization.text('ui.areYouSureLogout');
+        prompt.appendChild(message);
+        const confirm = document.createElement('button');
+        confirm.id = this.IdConfirmLogout;
+        confirm.type = 'button';
+        confirm.className = 'btn btn-danger me-2';
+        confirm.textContent = Localization.text('ui.logout');
+        prompt.appendChild(confirm);
+        const cancel = document.createElement('button');
+        cancel.id = this.IdCancelLogout;
+        cancel.type = 'button';
+        cancel.className = this.ClassFormBtnSec;
+        cancel.textContent = Localization.text('ui.cancel');
+        prompt.appendChild(cancel);
+        app.prepend(prompt);
+        confirm.focus({ preventScroll: true });
+    }
     onClick(e) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             const el = e.target;
             switch (el.id) {
                 case this.IdOtherOptions:
                     ScenarioController.changeScenario(new OtherView());
                     break;
                 case this.IdLogout:
-                    if (confirm('Are you sure to logout?')) {
-                        State.logout();
-                        ScenarioController.changeScenario(new MainView());
-                    }
+                    this.showLogoutConfirmation();
+                    break;
+                case this.IdCancelLogout:
+                    (_a = this.getEl(this.IdLogoutPrompt)) === null || _a === void 0 ? void 0 : _a.remove();
+                    break;
+                case this.IdConfirmLogout:
+                    (_b = this.getEl(this.IdLogoutPrompt)) === null || _b === void 0 ? void 0 : _b.remove();
+                    State.logout();
+                    const loginView = new MainView();
+                    yield ScenarioController.changeScenario(loginView);
+                    loginView.reactivateUnlockPassword();
                     break;
                 case this.IdGoToInit:
                     this.Init();

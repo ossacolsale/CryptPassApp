@@ -86,7 +86,7 @@ class MainView extends View {
                         ${ViewHelpers.button(this.IdRestoreOptions,'Restore options',this.ClassFormBtnSec)}</p>`}
                         </form>
                         `);
-                        if (!deviceUnlockRequired) this.focusPassword(true);
+                        if (!deviceUnlockRequired) this.focusPassword(true, cordova.platformId === 'electron');
                     }
                     
                 }
@@ -122,10 +122,10 @@ class MainView extends View {
     protected async onSubmit(e: Event) {
         switch ((e.target as HTMLFormElement).id) {
             case this.IdUnlockForm:
-                this.handlePwd();
+                await this.handlePwd();
             break;
             case this.IdChPwdForm:
-                this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => this.Init(), async (Old: string, New: string) => await this._ca.changePwd(Old, New));
+                await this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => this.Init(), async (Old: string, New: string) => await this._ca.changePwd(Old, New));
             break;
         }
     }
@@ -160,7 +160,7 @@ class MainView extends View {
             async (): Promise<boolean> => {   
                 const pwd = (this.getEl(this.IdPassword1) as HTMLInputElement).value;
                 if (pwd.length < 10) {
-                    alert(Localization.text('main.wrongPassword'));
+                    this.showWrongPassword();
                     return false;
                 }
                 let pwdCorrect: boolean;
@@ -183,22 +183,26 @@ class MainView extends View {
                     if (!ScenarioController.restoreLockedScenario()) await this.Init();
                     return true;
                 }
-                if (cordova.platformId === 'electron') {
-                    const form = this.getEl(this.IdUnlockForm);
-                    form.querySelector('#UnlockPasswordError')?.remove();
-                    const message = document.createElement('div');
-                    message.id = 'UnlockPasswordError';
-                    message.className = 'alert alert-warning';
-                    message.setAttribute('role', 'alert');
-                    message.textContent = Localization.text('main.wrongPassword');
-                    form.prepend(message);
-                    (this.getEl(this.IdPassword1) as HTMLInputElement).value = '';
-                } else {
-                    alert(Localization.text('main.wrongPassword'));
-                }
+                this.showWrongPassword();
                 return false;
             }, (res) => { if (!res) this.focusPassword(true, cordova.platformId === 'electron'); }
         );
+    }
+
+    private showWrongPassword(): void {
+        if (cordova.platformId !== 'electron') {
+            alert(Localization.text('main.wrongPassword'));
+            return;
+        }
+        const form = this.getEl(this.IdUnlockForm);
+        form.querySelector('#UnlockPasswordError')?.remove();
+        const message = document.createElement('div');
+        message.id = 'UnlockPasswordError';
+        message.className = 'alert alert-warning';
+        message.setAttribute('role', 'alert');
+        message.textContent = Localization.text('main.wrongPassword');
+        form.prepend(message);
+        (this.getEl(this.IdPassword1) as HTMLInputElement).value = '';
     }
 
     private showUnlockDiagnostic(message: string, diagnostic: string): void {
@@ -246,6 +250,10 @@ class MainView extends View {
         panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
+    public reactivateUnlockPassword(): void {
+        this.focusPassword(true, cordova.platformId === 'electron');
+    }
+
     private focusPassword(select: boolean, reset: boolean = false): void {
         if (cordova.platformId !== 'electron') {
             this.focusEl(this.IdPassword1, select);
@@ -263,16 +271,30 @@ class MainView extends View {
                 replacement.id = input.id;
                 replacement.className = input.className;
                 replacement.placeholder = input.placeholder;
-                replacement.autocomplete = 'current-password';
-                replacement.disabled = false;
-                replacement.readOnly = false;
+                replacement.name = 'cryptpass-unlock-password';
+                replacement.autocomplete = 'off';
+                replacement.spellcheck = false;
+                replacement.tabIndex = 0;
+                replacement.removeAttribute('disabled');
+                replacement.removeAttribute('readonly');
+                input.blur();
                 input.replaceWith(replacement);
                 input = replacement;
             }
+            input.removeAttribute('disabled');
+            input.removeAttribute('readonly');
             input.disabled = false;
             input.readOnly = false;
-            input.focus({ preventScroll: true });
-            if (select) input.select();
+            const focusInput = (): void => {
+                const activeInput = this.getEl(this.IdPassword1) as HTMLInputElement | null;
+                if (!activeInput) return;
+                activeInput.focus({ preventScroll: true });
+                if (select) activeInput.select();
+            };
+            void window.cryptPassDesktop?.focusWindow().then(
+                () => window.requestAnimationFrame(focusInput),
+                () => window.requestAnimationFrame(focusInput)
+            );
         }, 0));
     }
 

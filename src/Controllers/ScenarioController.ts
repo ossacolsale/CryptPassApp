@@ -22,12 +22,12 @@ class ScenarioController {
     protected static _currentScenario: ViewModel;
     private static lockedSnapshot?: LockedScenarioSnapshot;
 
-    public static changeScenario(scenario: View, initOptions?: any) {
+    public static changeScenario(scenario: View, initOptions?: any): Promise<void> {
         this.appInit();
         this.closeScenario();
         this._currentScenario = scenario;
         this.attachHandlers(this._currentScenario);
-        this._currentScenario.Init(initOptions);
+        return Promise.resolve(this._currentScenario.Init(initOptions)).then(() => undefined);
     }
 
     public static suspendCurrentScenarioForLock(): void {

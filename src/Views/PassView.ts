@@ -2,6 +2,9 @@ class PassView extends View implements ViewModel {
 
     protected readonly IdGoToInit: string = 'goToInit';
     protected readonly IdLogout: string = 'goToMainMenu';
+    protected readonly IdConfirmLogout: string = 'ConfirmLogout';
+    protected readonly IdCancelLogout: string = 'CancelLogout';
+    protected readonly IdLogoutPrompt: string = 'LogoutPrompt';
     protected readonly IdOtherOptions: string = 'goToOtherOptions';
     
     protected readonly IdEntriesList: string = 'entries';
@@ -206,6 +209,37 @@ class PassView extends View implements ViewModel {
     
     public onBackButton!: TBackButton;
 
+    private showLogoutConfirmation(): void {
+        const app = this.getEl(this.IdAppDiv);
+        app.querySelector(`#${this.IdLogoutPrompt}`)?.remove();
+
+        const prompt = document.createElement('section');
+        prompt.id = this.IdLogoutPrompt;
+        prompt.className = 'alert alert-warning';
+        prompt.setAttribute('role', 'alert');
+
+        const message = document.createElement('p');
+        message.textContent = Localization.text('ui.areYouSureLogout');
+        prompt.appendChild(message);
+
+        const confirm = document.createElement('button');
+        confirm.id = this.IdConfirmLogout;
+        confirm.type = 'button';
+        confirm.className = 'btn btn-danger me-2';
+        confirm.textContent = Localization.text('ui.logout');
+        prompt.appendChild(confirm);
+
+        const cancel = document.createElement('button');
+        cancel.id = this.IdCancelLogout;
+        cancel.type = 'button';
+        cancel.className = this.ClassFormBtnSec;
+        cancel.textContent = Localization.text('ui.cancel');
+        prompt.appendChild(cancel);
+
+        app.prepend(prompt);
+        confirm.focus({ preventScroll: true });
+    }
+
     protected async onClick(e: Event) {
         const el = e.target as HTMLInputElement;
         switch (el.id) {
@@ -213,10 +247,17 @@ class PassView extends View implements ViewModel {
                 ScenarioController.changeScenario(new OtherView());
             break;
             case this.IdLogout:
-                if (confirm('Are you sure to logout?')) {
-                    State.logout();
-                    ScenarioController.changeScenario(new MainView());
-                }
+                this.showLogoutConfirmation();
+            break;
+            case this.IdCancelLogout:
+                this.getEl(this.IdLogoutPrompt)?.remove();
+            break;
+            case this.IdConfirmLogout:
+                this.getEl(this.IdLogoutPrompt)?.remove();
+                State.logout();
+                const loginView = new MainView();
+                await ScenarioController.changeScenario(loginView);
+                loginView.reactivateUnlockPassword();
             break;
             case this.IdGoToInit:
                 this.Init();

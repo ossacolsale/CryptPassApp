@@ -32,7 +32,7 @@ declare class AutoLock {
     private static scheduleLock;
     private static checkInactivity;
     private static onVisibilityChange;
-    private static onWindowBlur;
+    private static onWindowFocus;
     static stop(clearDeviceUnlock?: boolean): void;
     static scheduleClipboardCleanup(secret: string): void;
     static clearClipboardIfUnchanged(): Promise<void>;
@@ -183,7 +183,7 @@ interface LockedScenarioSnapshot {
 declare class ScenarioController {
     protected static _currentScenario: ViewModel;
     private static lockedSnapshot?;
-    static changeScenario(scenario: View, initOptions?: any): void;
+    static changeScenario(scenario: View, initOptions?: any): Promise<void>;
     static suspendCurrentScenarioForLock(): void;
     static restoreLockedScenario(): boolean;
     protected static appInit(): void;
@@ -234,6 +234,7 @@ declare abstract class View implements ViewModel {
     protected LoaderShowAsync(doSomethingBeforeHiding?: () => any | Promise<any>, doSomethingAfterHiding?: (res?: any) => any | Promise<any>, hideAfter?: boolean): Promise<void>;
     protected LoaderHide(): void;
     protected sleep(milliseconds: number): void;
+    private showInlineFormError;
     protected handleChPwd(idpwdold: string, idpwdnew1: string, idpwdnew2: string, onsuccess: () => any, pwdChanger: (Old: string, New: string) => Promise<boolean>): Promise<void>;
 }
 declare const defaultMimeType: string;
@@ -287,8 +288,8 @@ declare class CommonHelpers {
     static StandardError(e: unknown): false;
     static withTimeout<T>(promise: Promise<T>, operation: string, timeoutMs?: number): Promise<T>;
     static CustomError(msg: string): false;
-    static CheckNewPassword(pwd1: string, pwd2: string): boolean;
-    static CheckChPassword(oldpwd: string, pwd1: string, pwd2: string): true | 'wrongOld' | 'wrongNew';
+    static CheckNewPassword(pwd1: string, pwd2: string, showAlerts?: boolean): boolean;
+    static CheckChPassword(oldpwd: string, pwd1: string, pwd2: string, showAlerts?: boolean): true | 'wrongOld' | 'wrongNew';
     static insensitiveSorter: (a: string, b: string) => number;
 }
 interface CryptPassLocaleMap {
@@ -392,7 +393,9 @@ declare class MainView extends View {
     protected onSubmit(e: Event): Promise<void>;
     protected onClick(e: Event): Promise<void>;
     protected handlePwd(): Promise<void>;
+    private showWrongPassword;
     private showUnlockDiagnostic;
+    reactivateUnlockPassword(): void;
     private focusPassword;
     protected handleDontChPwd(): void;
     Handlers: EventHandlerModel[];
@@ -441,6 +444,9 @@ declare class OtherView extends View implements ViewModel {
 declare class PassView extends View implements ViewModel {
     protected readonly IdGoToInit: string;
     protected readonly IdLogout: string;
+    protected readonly IdConfirmLogout: string;
+    protected readonly IdCancelLogout: string;
+    protected readonly IdLogoutPrompt: string;
     protected readonly IdOtherOptions: string;
     protected readonly IdEntriesList: string;
     protected readonly IdNewEntry: string;
@@ -492,6 +498,7 @@ declare class PassView extends View implements ViewModel {
     private editSimilarity;
     protected onSubmit(e: Event): Promise<void>;
     onBackButton: TBackButton;
+    private showLogoutConfirmation;
     protected onClick(e: Event): Promise<void>;
     protected doVoc(refId: string, action: 'view' | 'copy' | 'cancel'): void;
     protected selectTag(tag?: string): void;

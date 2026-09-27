@@ -81,11 +81,19 @@ abstract class View implements ViewModel {
     }
 
     protected focusEl(elId: string, alsoSelect: boolean = false) {
-        const input = this.getEl(elId) as HTMLInputElement; 
-        input.focus();
-        const len = input.value.length;
-        input.setSelectionRange(len, len);
-        if (alsoSelect) (this.getEl(elId) as HTMLInputElement).select();
+        const focus = (): void => {
+            const input = this.getEl(elId) as HTMLInputElement | null;
+            if (!input) return;
+            input.focus({ preventScroll: true });
+            try {
+                const len = input.value.length;
+                input.setSelectionRange(len, len);
+                if (alsoSelect) input.select();
+            } catch (_) { /* Some control types do not expose selection ranges. */ }
+        };
+        if (cordova.platformId === 'electron' && window.cryptPassDesktop?.focusWindow) {
+            void window.cryptPassDesktop.focusWindow().then(focus, focus);
+        } else focus();
     }
 
     private LoaderShowCommands() {
@@ -146,30 +154,52 @@ abstract class View implements ViewModel {
         } while (currentDate - date < milliseconds);
     }
 
+    private showInlineFormError(message: string): void {
+        const form = document.querySelector('form');
+        if (!form) return;
+        form.querySelector('#PasswordValidationError')?.remove();
+        const error = document.createElement('div');
+        error.id = 'PasswordValidationError';
+        error.className = 'alert alert-warning';
+        error.setAttribute('role', 'alert');
+        error.textContent = message;
+        form.prepend(error);
+    }
+
     protected async handleChPwd(idpwdold: string, idpwdnew1: string, idpwdnew2: string, onsuccess: () => any, pwdChanger: (Old: string, New: string) => Promise<boolean>) {
         const old = this.getVal(idpwdold,true);
         const pwd1 = this.getVal(idpwdnew1,true);
-        const check = CommonHelpers.CheckChPassword(old, pwd1, this.getVal(idpwdnew2, true));
+        const pwd2 = this.getVal(idpwdnew2, true);
+        const isElectron = cordova.platformId === 'electron';
+        const check = CommonHelpers.CheckChPassword(old, pwd1, pwd2, !isElectron);
         switch (check) {
             case true:
                 await this.LoaderShowAsync(
-                    async (): Promise<boolean> => {   
-                        const done = await pwdChanger(old, pwd1);
-                        if (done) {
-                            alert('Password correctly changed');
-                            onsuccess();
-                            return true;
+                    async (): Promise<boolean> => await pwdChanger(old, pwd1),
+                    async (res) => {
+                        if (res) {
+                            if (!isElectron) alert('Password correctly changed');
+                            await onsuccess();
                         } else {
-                            alert('Something\'s gone wrong. Please retry');
-                            return false;
+                            if (isElectron) this.showInlineFormError(Localization.text('alert.operationFailed'));
+                            else alert('Something\'s gone wrong. Please retry');
+                            this.focusEl(idpwdnew1, true);
                         }
-                    }, (res) => { if (!res) this.focusEl(idpwdnew1,true); }
+                    }
                 );
             break;
             case 'wrongNew':
+                if (isElectron) {
+                    let message = 'alert.passwordMismatch';
+                    if (old === pwd1 || old === pwd2) message = 'alert.passwordSame';
+                    else if (pwd1 === '' && pwd2 === '') message = 'alert.passwordRequired';
+                    else if (pwd1.length < 10) message = 'alert.passwordShort';
+                    this.showInlineFormError(Localization.text(message));
+                }
                 this.focusEl(idpwdnew1,true);
             break;
             case 'wrongOld':
+                if (isElectron) this.showInlineFormError(Localization.text('alert.oldPasswordWrong'));
                 this.focusEl(idpwdold,true);
             break;
         }       

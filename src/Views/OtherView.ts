@@ -129,7 +129,7 @@ class OtherView extends View implements ViewModel {
     protected async onSubmit(e: Event) {
         switch ((e.target as HTMLFormElement).id) {
             case this.IdChPwdForm:
-                this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => ScenarioController.changeScenario(new MainView()), async (Old: string, New: string) => await this._ca.changePwd(Old, New));
+                await this.handleChPwd(this.IdPasswordOld, this.IdPassword1, this.IdPassword2, () => ScenarioController.changeScenario(new MainView()), async (Old: string, New: string) => await this._ca.changePwd(Old, New));
             break;
 
         }

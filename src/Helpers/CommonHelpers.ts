@@ -18,29 +18,29 @@ class CommonHelpers {
         return false;
     }
 
-    public static CheckNewPassword (pwd1: string, pwd2: string): boolean {
+    public static CheckNewPassword (pwd1: string, pwd2: string, showAlerts: boolean = true): boolean {
         let ok: boolean = false;
         if (pwd1 == '' && pwd2 == '') {
-            alert('You have to type passwords before proceeding');
+            if (showAlerts) alert('You have to type passwords before proceeding');
         } else if (pwd1.length < 10) {
-            alert('Have you really typed a less than 10 characters password?');
+            if (showAlerts) alert('Have you really typed a less than 10 characters password?');
         } else if (pwd1 != pwd2) {
-            alert('Passwords don\'t match!');
+            if (showAlerts) alert('Passwords don\'t match!');
         } else {
             ok = true;
         }
         return ok;
     }
 
-    public static CheckChPassword (oldpwd: string, pwd1: string, pwd2: string): true | 'wrongOld' | 'wrongNew' {
+    public static CheckChPassword (oldpwd: string, pwd1: string, pwd2: string, showAlerts: boolean = true): true | 'wrongOld' | 'wrongNew' {
         if (oldpwd !== State.Password) {
-            alert('Old password is wrong, please retype');
+            if (showAlerts) alert('Old password is wrong, please retype');
             return 'wrongOld';
         } else if (oldpwd == pwd1 || oldpwd == pwd2) {
-            alert('New password must be different from old');
+            if (showAlerts) alert('New password must be different from old');
             return 'wrongNew';
         } else {
-            return this.CheckNewPassword(pwd1, pwd2) ? true : 'wrongNew';
+            return this.CheckNewPassword(pwd1, pwd2, showAlerts) ? true : 'wrongNew';
         }
     }
 

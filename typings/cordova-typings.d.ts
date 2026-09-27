@@ -12,6 +12,7 @@ interface CryptPassDesktopAPI {
     secureGet(key: string): Promise<string | false>;
     secureSet(key: string, value: string): Promise<string | false>;
     secureDelete(key: string): Promise<string | false>;
+    focusWindow(): Promise<boolean>;
     onLockRequested?(callback: () => void): () => void;
 }
 
