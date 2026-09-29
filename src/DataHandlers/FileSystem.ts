@@ -38,16 +38,7 @@ class AndroidFS {
     }
 
     private static async selectVaultFolder(): Promise<{ treeUri: string; files: Array<{ name: string; relativePath: string }> }> {
-        return new Promise((resolve, reject) => (cordova.exec as any)(
-            (result: string | { treeUri: string; files: Array<{ name: string; relativePath: string }> }) => {
-                try { resolve(typeof result === 'string' ? JSON.parse(result) : result); }
-                catch (error) { reject(error); }
-            },
-            reject,
-            'Chooser',
-            'selectVaultFolder',
-            []
-        ));
+        return await cordova.plugins.cryptPassStorage.selectVaultFolder();
     }
 
     private static async resolveUri(uri: string): Promise<string | false> {
@@ -55,9 +46,7 @@ class AndroidFS {
         if (!raw) return uri;
         try {
             const grant = JSON.parse(raw) as { treeUri: string; name: string };
-            return await new Promise((resolve, reject) => (cordova.exec as any)(
-                (liveUri: string) => resolve(liveUri), reject, 'Chooser', 'resolveFileInTree', [grant.treeUri, grant.name]
-            ));
+            return await cordova.plugins.cryptPassStorage.resolveFileInTree(grant.treeUri, grant.name);
         } catch (_) { return false; }
     }
     
@@ -70,9 +59,7 @@ class AndroidFS {
                 throw new Error(Localization.text('file.invalidVaultName'));
             if (!/\.json$/i.test(fileName)) fileName += '.json';
             const selectedFolder = await this.selectVaultFolder();
-            await new Promise<void>((resolve, reject) => (cordova.exec as any)(
-                () => resolve(), reject, 'Chooser', 'createFileInTree', [selectedFolder.treeUri, fileName, fileContent]
-            ));
+            await cordova.plugins.cryptPassStorage.createFileInTree(selectedFolder.treeUri, fileName, fileContent);
             const stableUri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(fileName);
             this.saveTreeGrant(stableUri, selectedFolder.treeUri, fileName);
             const savedContent = await this.ReadFile(stableUri);
@@ -90,20 +77,31 @@ class AndroidFS {
 
     public static async WriteFile (uri: string, fileContent: string): Promise<boolean> {
         try {
-            const blob = new Blob([fileContent], {type: defaultMimeType});
             const liveUri = await this.resolveUri(uri);
-            if (liveUri === false) return false;
+            if (liveUri === false) {
+                console.error('Android vault write failed while resolving the document URI');
+                return false;
+            }
             const uri_content = await this.ReadFile(uri);
             const uri_bk_content = window.localStorage.getItem(uri);//encrypted-vault recovery copy
             if (uri_content !== false && uri_content !== uri_bk_content)
                 window.localStorage.setItem(uri, uri_content);
             if (uri_content === false && uri_bk_content === null)
                 window.localStorage.setItem(uri, fileContent);
-            await cordova.plugins.saveDialog.saveFileByUri(blob, liveUri);
+            await cordova.plugins.cryptPassStorage.writeFile(liveUri, fileContent);
             const savedContent = await this.ReadFile(uri);
-            return savedContent !== false && savedContent.replace(/\s+$/, '') === fileContent;
+            if (savedContent === false) {
+                console.error('Android vault write failed during read-back verification');
+                return false;
+            }
+            if (savedContent.replace(/\s+$/, '') !== fileContent) {
+                console.error('Android vault write read-back did not match the saved content');
+                return false;
+            }
+            return true;
         }
         catch (e) {
+            console.error('Android vault write bridge failed', e instanceof Error ? e.message : String(e));
             return CommonHelpers.StandardError(e);
         }
     }
@@ -112,7 +110,7 @@ class AndroidFS {
         try {
             const liveUri = await this.resolveUri(uri);
             if (liveUri === false) return false;
-            return await CommonHelpers.withTimeout(chooser.readFile(liveUri), 'Vault file read');
+            return await CommonHelpers.withTimeout(cordova.plugins.cryptPassStorage.readFile(liveUri), 'Vault file read');
         }
         catch (e) {
             return CommonHelpers.StandardError(e);

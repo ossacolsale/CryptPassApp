@@ -1,7 +1,6 @@
 
 /// <reference path="../.vscode/typings/cordova/cordova.d.ts"/>
-/// <reference path="../plugins/cordova-plugin-save-dialog/types/index.d.ts"/>
-/// <reference path="../plugins/cordova-plugin-simple-file-chooser/types/index.d.ts"/>
+/// <reference path="../local-plugins/cordova-plugin-cryptpass-storage/types/index.d.ts"/>
 
 interface CryptPassDesktopAPI {
     openVault(): Promise<{ handle: string; name: string; content: string } | false>;
@@ -185,4 +184,11 @@ interface SecureStorageConstructor {
  */
 interface CordovaPlugins {
     SecureStorage: SecureStorageConstructor;
+}
+
+interface FileChooserResult {
+    mediaType: string;
+    name: string;
+    uri: string;
+    content: string;
 }

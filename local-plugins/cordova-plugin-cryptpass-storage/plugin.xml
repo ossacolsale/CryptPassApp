@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        id="cordova-plugin-cryptpass-storage"
+        version="1.0.0">
+    <name>CryptPass Storage</name>
+    <description>Android SAF storage bridge for CryptPass</description>
+    <license>Apache-2.0</license>
+
+    <platform name="android">
+        <js-module src="www/cryptpass-storage.js" name="CryptPassStorage">
+            <clobbers target="cordova.plugins.cryptPassStorage" />
+        </js-module>
+
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="CryptPassStorage">
+                <param name="android-package" value="com.cryptpass.storage.CryptPassStorage" />
+            </feature>
+        </config-file>
+
+        <source-file src="src/android/CryptPassStorage.java" target-dir="src/com/cryptpass/storage" />
+    </platform>
+</plugin>

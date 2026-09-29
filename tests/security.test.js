@@ -5,6 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
 const ts = require('typescript');
+const { ConfigCryptPass } = require('cryptpass/dist/crypt');
 
 const root = path.join(__dirname, '..');
 const source = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -69,15 +70,69 @@ test('Electron secure storage only accepts named app configuration and profile k
     assert.match(source('src/DataHandlers/SecureStorage.ts'), /secureSet\(key, value\)/);
 });
 
-test('Android chooser uses document URIs and keeps cloud providers available', () => {
-    const chooser = source('plugins/cordova-plugin-simple-file-chooser/src/android/Chooser.java');
-    const saveDialog = source('plugins/cordova-plugin-save-dialog/src/android/SaveDialog.java');
-    assert.match(chooser, /Intent\.ACTION_OPEN_DOCUMENT/);
-    assert.doesNotMatch(chooser, /EXTRA_LOCAL_ONLY/);
-    assert.match(chooser, /takePersistableUriPermission\(uri, flags\)/);
-    assert.match(chooser, /Please relink it/);
-    assert.match(saveDialog, /Intent\.ACTION_CREATE_DOCUMENT/);
-    assert.match(saveDialog, /resultData\.getFlags\(\) & allowedFlags/);
+test('Android storage is provided by the repository-local SAF plugin', () => {
+    const pluginRoot = 'local-plugins/cordova-plugin-cryptpass-storage/';
+    const manifest = source(pluginRoot + 'plugin.xml');
+    const native = source(pluginRoot + 'src/android/CryptPassStorage.java');
+    const wrapper = source(pluginRoot + 'www/cryptpass-storage.js');
+    const appStorage = source('src/DataHandlers/FileSystem.ts');
+    const packageJson = JSON.parse(source('package.json'));
+    const typings = source('typings/cordova-typings.d.ts');
+    const androidHook = source('scripts/android-after-prepare.js');
+
+    assert.match(manifest, /id="cordova-plugin-cryptpass-storage"/);
+    assert.match(manifest, /<platform name="android">/);
+    assert.match(manifest, /<feature name="CryptPassStorage">/);
+    assert.match(native, /Intent\.ACTION_OPEN_DOCUMENT_TREE/);
+    assert.match(native, /takePersistableUriPermission/);
+    assert.match(native, /isReadPermission\(\)/);
+    assert.match(native, /isWritePermission\(\)/);
+    assert.match(native, /DocumentsContract\.getTreeDocumentId/);
+    assert.match(native, /buildChildDocumentsUriUsingTree/);
+    assert.match(native, /buildDocumentUriUsingTree/);
+    assert.match(native, /DocumentsContract\.createDocument/);
+    assert.match(native, /openInputStream/);
+    assert.match(native, /openOutputStream/);
+    assert.doesNotMatch(native, /Intent\.ACTION_OPEN_DOCUMENT(?!_TREE)/);
+    assert.doesNotMatch(native, /Intent\.ACTION_CREATE_DOCUMENT/);
+    assert.doesNotMatch(native, /EXTRA_LOCAL_ONLY/);
+    assert.match(wrapper, /'CryptPassStorage'/);
+    assert.match(appStorage, /cordova\.plugins\.cryptPassStorage/);
+    assert.doesNotMatch(appStorage, /saveDialog|chooser\.readFile|cordova\.exec/);
+    assert.equal(packageJson.devDependencies['cordova-plugin-cryptpass-storage'], 'file:local-plugins/cordova-plugin-cryptpass-storage');
+    assert.ok(!JSON.stringify(packageJson).includes('cordova-plugin-save-dialog'));
+    assert.ok(!JSON.stringify(packageJson).includes('cordova-plugin-simple-file-chooser'));
+    assert.doesNotMatch(typings, /cordova-plugin-(save-dialog|simple-file-chooser)/);
+    assert.doesNotMatch(androidHook, /Chooser\.java|chooserPath|resolveFileInTree|ACTION_OPEN_DOCUMENT_TREE/);
+});
+
+test('new wallet setup generates a valid sequence before importing stored sequence data', async () => {
+    const configActions = source('src/Configuration/ConfigActions.ts');
+    assert.match(configActions, /await this\.InitCryptPassConfig\(true\)/);
+    assert.match(configActions, /initializingNewWallet \? undefined : data\.se/);
+
+    const writes = {};
+    const writers = {
+        SequenceWriter: async value => { writes.sequence = value; return true; },
+        KeyPassWriter: async value => { writes.keypass = value; return true; }
+    };
+    assert.throws(
+        () => new ConfigCryptPass(writers, {}, { Sequence: [] }),
+        /Invalid sequence/
+    );
+    const freshConfig = new ConfigCryptPass(writers, {});
+    assert.equal(await freshConfig.initSeqAndKey('a-long-test-password'), true);
+    assert.equal(writes.sequence.Sequence.length, 26);
+    assert.equal(writes.keypass.Key.MasterKChunks.length, 26);
+});
+
+test('Android stable vault references retain their localStorage grant mapping', () => {
+    const appStorage = source('src/DataHandlers/FileSystem.ts');
+    assert.match(appStorage, /'cryptPassDocumentTree:' \+ uri/);
+    assert.match(appStorage, /JSON\.stringify\(\{ treeUri: treeUri, name: name \}\)/);
+    assert.match(appStorage, /'cryptpass-tree:' \+ encodeURIComponent\(selectedFolder\.treeUri\) \+ '#\/' \+ encodeURIComponent\(fileName\)/);
+    assert.match(appStorage, /'cryptpass-tree:' \+ encodeURIComponent\(selectedFolder\.treeUri\) \+ '#\/' \+ encodeURIComponent\(file\.relativePath\)/);
+    assert.match(appStorage, /window\.localStorage\.getItem\(this\.treeGrantKey\(uri\)\)/);
 });
 
 test('AutoLock timer callbacks avoid shared static-field aliases in the bundled script', () => {

@@ -346,5 +346,12 @@
   "file.newVaultName": "Choose a file name for the new vault:",
   "file.invalidVaultName": "The file name is empty or contains characters Android does not allow.",
   "entry.hide": "Hide",
-  "wallet.passwordPurpose": "This password encrypts the new wallet. Repeating it checks that it was typed correctly."
+  "wallet.passwordPurpose": "This password encrypts the new wallet. Repeating it checks that it was typed correctly.",
+  "ui.configurationFailureFile": "The vault file could not be created and verified. Check folder access and retry with a new name.",
+  "ui.configurationFailureReference": "The file was created, but its reference could not be saved to secure storage.",
+  "ui.configurationFailureSecureConfig": "The file was created, but its configuration could not be saved to secure storage.",
+  "ui.configurationFailureSequence": "The file was created, but the recovery sequence could not be saved to secure storage.",
+  "ui.configurationFailureVaultWrite": "The file was created, but writing or verifying the encrypted data failed. The file is incomplete and must not be used.",
+  "ui.configurationFailureCrypto": "Generating or saving the initial wallet data failed.",
+  "ui.configurationFailureUnknown": "Configuration did not finish. The created file may be incomplete and must not be used."
 }

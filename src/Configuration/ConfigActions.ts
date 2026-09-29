@@ -59,11 +59,21 @@ class ConfigActions {
     public async setup (action: configaction, sequence?: number[]): Promise<boolean> {
         switch (action) {
             case 'NEW':
+                Config.lastSetupFailureCode = false;
                 const newKP = await Config.newKeyPass();
-                if (newKP) {
-                    await this.InitCryptPassConfig();
-                    return this._CryptPassConfig.initSeqAndKey(this._PWD);
-                } else return false;
+                if (!newKP) {
+                    if (!Config.lastSetupFailureCode) Config.lastSetupFailureCode = 'vault-create';
+                    return false;
+                }
+                try {
+                    await this.InitCryptPassConfig(true);
+                    const initialized = await this._CryptPassConfig.initSeqAndKey(this._PWD);
+                    if (!initialized && !Config.lastSetupFailureCode) Config.lastSetupFailureCode = 'crypto-init';
+                    return initialized;
+                } catch (error) {
+                    if (!Config.lastSetupFailureCode) Config.lastSetupFailureCode = 'crypto-init';
+                    throw error;
+                }
             case 'InitKeyPassAndSequence':
                 await this.InitCryptPassConfig();
                 return this._CryptPassConfig.initSeqAndKey(this._PWD);
@@ -82,6 +92,19 @@ class ConfigActions {
         }
     }
 
+    public getSetupFailureMessage(): string {
+        const messages: Record<string, string> = {
+            'vault-create': 'ui.configurationFailureFile',
+            'vault-reference': 'ui.configurationFailureReference',
+            'secure-config': 'ui.configurationFailureSecureConfig',
+            'sequence-save': 'ui.configurationFailureSequence',
+            'vault-write': 'ui.configurationFailureVaultWrite',
+            'crypto-init': 'ui.configurationFailureCrypto'
+        };
+        const messageKey = Config.lastSetupFailureCode ? messages[Config.lastSetupFailureCode] : undefined;
+        return Localization.text(messageKey || 'ui.configurationFailureUnknown');
+    }
+
     public async getStatus (): Promise<ConfigStatus> {
         if (!await Config.ConfigInit()) return 'FatalError';
         const status = await Config.getStatus();
@@ -90,8 +113,14 @@ class ConfigActions {
         return status;
     }
 
-    protected async InitCryptPassConfig() {
+    protected async InitCryptPassConfig(initializingNewWallet: boolean = false) {
         const data = await Config.readData();
-        this._CryptPassConfig = new LibCryptPass.ConfigCryptPass(StandardRnW, data.kp, data.se);
+        // A new wallet starts with an empty stored sequence. Let initSeqAndKey
+        // generate and persist a valid sequence before the model imports one.
+        this._CryptPassConfig = new LibCryptPass.ConfigCryptPass(
+            StandardRnW,
+            data.kp,
+            initializingNewWallet ? undefined : data.se
+        );
     }
 }

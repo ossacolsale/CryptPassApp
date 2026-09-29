@@ -443,15 +443,19 @@ class Config {
         return __awaiter(this, void 0, void 0, function* () {
             const s = JSON.stringify(seq);
             const cfg = yield this.getConfig();
+            let saved;
             if (cfg !== false) {
                 cfg.Sequence = s;
-                return this.setConfig(cfg);
+                saved = yield this.setConfig(cfg);
             }
             else {
                 const newCfg = this.defaultConfig;
                 newCfg.Sequence = s;
-                return this.setConfig(newCfg);
+                saved = yield this.setConfig(newCfg);
             }
+            if (!saved)
+                this.lastSetupFailureCode = 'sequence-save';
+            return saved;
         });
     }
     static getKeyPassPath() {
@@ -480,20 +484,28 @@ class Config {
         return __awaiter(this, void 0, void 0, function* () {
             const kpPath = yield this.getKeyPassPath();
             if (kpPath !== false) {
-                return FS.WriteFile(kpPath, JSON.stringify(kp));
+                const saved = yield FS.WriteFile(kpPath, JSON.stringify(kp));
+                if (!saved)
+                    this.lastSetupFailureCode = 'vault-write';
+                return saved;
             }
-            else
+            else {
+                this.lastSetupFailureCode = 'vault-reference';
                 return false;
+            }
         });
     }
     static newKeyPass() {
         return __awaiter(this, arguments, void 0, function* (kp = {}) {
             const uri = yield FS.NewFile(this.defaultKeyPassFilename, JSON.stringify(kp));
             if (uri !== false) {
-                return this.setKeyPassUri(uri);
+                const saved = yield this.setKeyPassUri(uri);
+                if (!saved)
+                    this.lastSetupFailureCode = 'secure-config';
+                return saved;
             }
-            else
-                return false;
+            this.lastSetupFailureCode = 'vault-create';
+            return false;
         });
     }
     static selectKeyPassFiles() {
@@ -523,6 +535,7 @@ _a = Config;
 Config.defaultPreferences = { ChPwdReminder: true };
 Config.emptySequence = { Sequence: [] };
 Config.configName = 'cryptPassCfg';
+Config.lastSetupFailureCode = false;
 Config.defaultKeyPassFilename = 'keypass.json';
 Config.defaultConfig = { KeyFilePath: '',
     Sequence: '{"Sequence": []}',
@@ -582,13 +595,25 @@ class ConfigActions {
         return __awaiter(this, void 0, void 0, function* () {
             switch (action) {
                 case 'NEW':
+                    Config.lastSetupFailureCode = false;
                     const newKP = yield Config.newKeyPass();
-                    if (newKP) {
-                        yield this.InitCryptPassConfig();
-                        return this._CryptPassConfig.initSeqAndKey(this._PWD);
-                    }
-                    else
+                    if (!newKP) {
+                        if (!Config.lastSetupFailureCode)
+                            Config.lastSetupFailureCode = 'vault-create';
                         return false;
+                    }
+                    try {
+                        yield this.InitCryptPassConfig(true);
+                        const initialized = yield this._CryptPassConfig.initSeqAndKey(this._PWD);
+                        if (!initialized && !Config.lastSetupFailureCode)
+                            Config.lastSetupFailureCode = 'crypto-init';
+                        return initialized;
+                    }
+                    catch (error) {
+                        if (!Config.lastSetupFailureCode)
+                            Config.lastSetupFailureCode = 'crypto-init';
+                        throw error;
+                    }
                 case 'InitKeyPassAndSequence':
                     yield this.InitCryptPassConfig();
                     return this._CryptPassConfig.initSeqAndKey(this._PWD);
@@ -611,6 +636,18 @@ class ConfigActions {
             }
         });
     }
+    getSetupFailureMessage() {
+        const messages = {
+            'vault-create': 'ui.configurationFailureFile',
+            'vault-reference': 'ui.configurationFailureReference',
+            'secure-config': 'ui.configurationFailureSecureConfig',
+            'sequence-save': 'ui.configurationFailureSequence',
+            'vault-write': 'ui.configurationFailureVaultWrite',
+            'crypto-init': 'ui.configurationFailureCrypto'
+        };
+        const messageKey = Config.lastSetupFailureCode ? messages[Config.lastSetupFailureCode] : undefined;
+        return Localization.text(messageKey || 'ui.configurationFailureUnknown');
+    }
     getStatus() {
         return __awaiter(this, void 0, void 0, function* () {
             if (!(yield Config.ConfigInit()))
@@ -622,9 +659,9 @@ class ConfigActions {
         });
     }
     InitCryptPassConfig() {
-        return __awaiter(this, void 0, void 0, function* () {
+        return __awaiter(this, arguments, void 0, function* (initializingNewWallet = false) {
             const data = yield Config.readData();
-            this._CryptPassConfig = new LibCryptPass.ConfigCryptPass(StandardRnW, data.kp, data.se);
+            this._CryptPassConfig = new LibCryptPass.ConfigCryptPass(StandardRnW, data.kp, initializingNewWallet ? undefined : data.se);
         });
     }
 }
@@ -1239,14 +1276,7 @@ class AndroidFS {
     }
     static selectVaultFolder() {
         return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => cordova.exec((result) => {
-                try {
-                    resolve(typeof result === 'string' ? JSON.parse(result) : result);
-                }
-                catch (error) {
-                    reject(error);
-                }
-            }, reject, 'Chooser', 'selectVaultFolder', []));
+            return yield cordova.plugins.cryptPassStorage.selectVaultFolder();
         });
     }
     static resolveUri(uri) {
@@ -1256,7 +1286,7 @@ class AndroidFS {
                 return uri;
             try {
                 const grant = JSON.parse(raw);
-                return yield new Promise((resolve, reject) => cordova.exec((liveUri) => resolve(liveUri), reject, 'Chooser', 'resolveFileInTree', [grant.treeUri, grant.name]));
+                return yield cordova.plugins.cryptPassStorage.resolveFileInTree(grant.treeUri, grant.name);
             }
             catch (_) {
                 return false;
@@ -1275,7 +1305,7 @@ class AndroidFS {
                 if (!/\.json$/i.test(fileName))
                     fileName += '.json';
                 const selectedFolder = yield this.selectVaultFolder();
-                yield new Promise((resolve, reject) => cordova.exec(() => resolve(), reject, 'Chooser', 'createFileInTree', [selectedFolder.treeUri, fileName, fileContent]));
+                yield cordova.plugins.cryptPassStorage.createFileInTree(selectedFolder.treeUri, fileName, fileContent);
                 const stableUri = 'cryptpass-tree:' + encodeURIComponent(selectedFolder.treeUri) + '#/' + encodeURIComponent(fileName);
                 this.saveTreeGrant(stableUri, selectedFolder.treeUri, fileName);
                 const savedContent = yield this.ReadFile(stableUri);
@@ -1294,21 +1324,31 @@ class AndroidFS {
     static WriteFile(uri, fileContent) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const blob = new Blob([fileContent], { type: defaultMimeType });
                 const liveUri = yield this.resolveUri(uri);
-                if (liveUri === false)
+                if (liveUri === false) {
+                    console.error('Android vault write failed while resolving the document URI');
                     return false;
+                }
                 const uri_content = yield this.ReadFile(uri);
                 const uri_bk_content = window.localStorage.getItem(uri);
                 if (uri_content !== false && uri_content !== uri_bk_content)
                     window.localStorage.setItem(uri, uri_content);
                 if (uri_content === false && uri_bk_content === null)
                     window.localStorage.setItem(uri, fileContent);
-                yield cordova.plugins.saveDialog.saveFileByUri(blob, liveUri);
+                yield cordova.plugins.cryptPassStorage.writeFile(liveUri, fileContent);
                 const savedContent = yield this.ReadFile(uri);
-                return savedContent !== false && savedContent.replace(/\s+$/, '') === fileContent;
+                if (savedContent === false) {
+                    console.error('Android vault write failed during read-back verification');
+                    return false;
+                }
+                if (savedContent.replace(/\s+$/, '') !== fileContent) {
+                    console.error('Android vault write read-back did not match the saved content');
+                    return false;
+                }
+                return true;
             }
             catch (e) {
+                console.error('Android vault write bridge failed', e instanceof Error ? e.message : String(e));
                 return CommonHelpers.StandardError(e);
             }
         });
@@ -1319,7 +1359,7 @@ class AndroidFS {
                 const liveUri = yield this.resolveUri(uri);
                 if (liveUri === false)
                     return false;
-                return yield CommonHelpers.withTimeout(chooser.readFile(liveUri), 'Vault file read');
+                return yield CommonHelpers.withTimeout(cordova.plugins.cryptPassStorage.readFile(liveUri), 'Vault file read');
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -3328,8 +3368,9 @@ class RestoreView extends View {
                         }
                         else {
                             this.setApp(`
-    <p>Something went wrong with starting configuration</p>
-    <p>${ViewHelpers.button(this.IdGoToInit, 'Retry', this.ClassFormBtn)}</p>
+    <p>${Localization.text('ui.configurationFailed')}</p>
+    <p>${this._ca.getSetupFailureMessage()}</p>
+    <p>${ViewHelpers.button(this.IdGoToInit, Localization.text('ui.retry'), this.ClassFormBtn)}</p>
     `, () => this.clickEl(this.IdGoToInit));
                         }
                     }

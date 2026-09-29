@@ -19,6 +19,7 @@ class Config {
     protected static readonly defaultPreferences: preferences = { ChPwdReminder: true };
     protected static readonly emptySequence: Sequence = { Sequence: [] };
     protected static readonly configName = 'cryptPassCfg';
+    public static lastSetupFailureCode: string | false = false;
     protected static readonly defaultKeyPassFilename = 'keypass.json';
     protected static readonly defaultConfig: config = {    KeyFilePath: '',
                                                     Sequence: '{"Sequence": []}',
@@ -99,14 +100,17 @@ class Config {
     public static async writeSequence (seq: {}): Promise<boolean> {
         const s = JSON.stringify(seq);
         const cfg = await this.getConfig();
+        let saved: boolean;
         if (cfg !== false) {
             cfg.Sequence = s;
-            return this.setConfig(cfg);
+            saved = await this.setConfig(cfg);
         } else {
             const newCfg = this.defaultConfig;
             newCfg.Sequence = s;
-            return this.setConfig(newCfg);
+            saved = await this.setConfig(newCfg);
         }
+        if (!saved) this.lastSetupFailureCode = 'sequence-save';
+        return saved;
     }
 
     protected static async getKeyPassPath (): Promise<string|false> {
@@ -130,16 +134,25 @@ class Config {
     public static async writeKeyPass (kp: {}): Promise<boolean> {
         const kpPath = await this.getKeyPassPath();
         if (kpPath !== false) {
-            return FS.WriteFile(kpPath, JSON.stringify(kp));
+            const saved = await FS.WriteFile(kpPath, JSON.stringify(kp));
+            if (!saved) this.lastSetupFailureCode = 'vault-write';
+            return saved;
         }
-        else return false;
+        else {
+            this.lastSetupFailureCode = 'vault-reference';
+            return false;
+        }
     }
 
     public static async newKeyPass (kp: {} = {}): Promise<boolean> {
         const uri = await FS.NewFile(this.defaultKeyPassFilename,JSON.stringify(kp));
         if (uri !== false) {
-            return this.setKeyPassUri(uri);
-        } else return false;
+            const saved = await this.setKeyPassUri(uri);
+            if (!saved) this.lastSetupFailureCode = 'secure-config';
+            return saved;
+        }
+        this.lastSetupFailureCode = 'vault-create';
+        return false;
     }
 
     /*public static async selectKeyPass (): Promise<{}|false> {

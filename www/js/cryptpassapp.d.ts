@@ -67,6 +67,7 @@ declare class Config {
     protected static readonly defaultPreferences: preferences;
     protected static readonly emptySequence: Sequence;
     protected static readonly configName = "cryptPassCfg";
+    static lastSetupFailureCode: string | false;
     protected static readonly defaultKeyPassFilename = "keypass.json";
     protected static readonly defaultConfig: config;
     static ConfigInit(): Promise<boolean>;
@@ -105,8 +106,9 @@ declare class ConfigActions {
     needToChangePassword(): Promise<boolean>;
     checkPwd(): boolean;
     setup(action: configaction, sequence?: number[]): Promise<boolean>;
+    getSetupFailureMessage(): string;
     getStatus(): Promise<ConfigStatus>;
-    protected InitCryptPassConfig(): Promise<void>;
+    protected InitCryptPassConfig(initializingNewWallet?: boolean): Promise<void>;
 }
 declare const StandardRnW: StdWriters;
 interface WalletProfile {

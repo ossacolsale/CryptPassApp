@@ -1,0 +1,12 @@
+{
+  "name": "cordova-plugin-cryptpass-storage",
+  "version": "1.0.0",
+  "description": "Android SAF storage bridge for CryptPass",
+  "cordova": {
+    "id": "cordova-plugin-cryptpass-storage",
+    "platforms": [
+      "android"
+    ]
+  },
+  "license": "Apache-2.0"
+}

@@ -279,8 +279,9 @@ class RestoreView extends View implements ViewModel {
     `);
                     } else {
                         this.setApp(`
-    <p>Something went wrong with starting configuration</p>
-    <p>${ViewHelpers.button(this.IdGoToInit,'Retry',this.ClassFormBtn)}</p>
+    <p>${Localization.text('ui.configurationFailed')}</p>
+    <p>${this._ca.getSetupFailureMessage()}</p>
+    <p>${ViewHelpers.button(this.IdGoToInit,Localization.text('ui.retry'),this.ClassFormBtn)}</p>
     `,() => this.clickEl(this.IdGoToInit));
                     }
                 }

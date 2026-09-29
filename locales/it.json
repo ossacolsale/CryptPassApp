@@ -346,5 +346,12 @@
   "file.newVaultName": "Scegli il nome del file del nuovo portafoglio:",
   "file.invalidVaultName": "Il nome del file è vuoto o contiene caratteri non consentiti da Android.",
   "entry.hide": "Nascondi",
-  "wallet.passwordPurpose": "Questa password cifra il nuovo portafoglio. La ripetizione serve solo a verificare che sia stata digitata correttamente."
+  "wallet.passwordPurpose": "Questa password cifra il nuovo portafoglio. La ripetizione serve solo a verificare che sia stata digitata correttamente.",
+  "ui.configurationFailureFile": "Non è stato possibile creare e verificare il file del vault. Controlla l’accesso alla cartella e riprova con un nuovo nome.",
+  "ui.configurationFailureReference": "Il file è stato creato, ma il suo riferimento non è stato salvato nell’archivio protetto.",
+  "ui.configurationFailureSecureConfig": "Il file è stato creato, ma la configurazione non è stata salvata nell’archivio protetto.",
+  "ui.configurationFailureSequence": "Il file è stato creato, ma la sequenza non è stata salvata nell’archivio protetto.",
+  "ui.configurationFailureVaultWrite": "Il file è stato creato, ma la scrittura o la verifica dei dati cifrati non è riuscita. Il file è incompleto e non va usato.",
+  "ui.configurationFailureCrypto": "La generazione o il salvataggio dei dati iniziali non è riuscito.",
+  "ui.configurationFailureUnknown": "La configurazione non è stata completata. Il file creato potrebbe essere incompleto e non va usato."
 }
