@@ -247,18 +247,18 @@ AutoLock.copiedSecret = null;
 AutoLock.listening = false;
 class DeviceAuth {
     static call(action) {
-        return new Promise((resolve, reject) => cordova.exec((result) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', action, []));
+        if (action === 'hasScreenLock')
+            return cordova.plugins.cryptPassStorage.deviceAuth.hasScreenLock();
+        return this.confirm();
     }
     static hasScreenLock() { return this.call('hasScreenLock'); }
     static confirm() {
-        return new Promise((resolve, reject) => cordova.exec((result) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', 'confirm', [
-            Localization.text('main.deviceAuthTitle'), Localization.text('main.deviceAuthDescription')
-        ]));
+        return cordova.plugins.cryptPassStorage.deviceAuth.confirm(Localization.text('main.deviceAuthTitle'), Localization.text('main.deviceAuthDescription'));
     }
     static showKeyboard() {
         if (cordova.platformId !== 'android')
             return;
-        window.setTimeout(() => cordova.exec(() => undefined, (error) => console.error('Could not open the Android keyboard', error), 'CryptPassDeviceAuth', 'showKeyboard', []), 120);
+        window.setTimeout(() => void cordova.plugins.cryptPassStorage.deviceAuth.showKeyboard().catch((error) => console.error('Could not open the Android keyboard', error)), 120);
     }
 }
 class AppActions {
@@ -2239,7 +2239,7 @@ class OtherView extends View {
         ${ViewHelpers.button(this.IdRestore, 'Restore/reset wallet', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions, 'Read instructions', this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangeDescr, Localization.text(passDescr === '' ? 'other.changeDescriptionAdd' : 'other.changeDescription'), this.ClassMenuBtn)}
-        ${ViewHelpers.button(this.IdAbout, 'About author', this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdAbout, Localization.text('other.about'), this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu, 'Go back', this.ClassFormBtnSec)}
         <p class="mt-3"><label for="AppLanguage">Language</label>
         <select id="AppLanguage" class="form-select"><option value="en">English</option><option value="it">Italiano</option></select></p>
@@ -2307,10 +2307,18 @@ class OtherView extends View {
         });
     }
     showAbout() {
-        this.setApp(`<h2>About author</h2>
-            <p>CryptPass is Developed by<p>
+        var _a;
+        const version = ((_a = window.CRYPTPASS_APP_INFO) === null || _a === void 0 ? void 0 : _a.version) || '';
+        const moreInfoUrl = Localization.current() === 'it'
+            ? 'https://giancarlomangiagli.it/CryptPass_gestore_di_password.html'
+            : 'https://giancarlomangiagli.it/en/CryptPass_password_manager.html';
+        this.setApp(`<h2>${Localization.text('other.aboutHeading')}</h2>
+            <p>CryptPass</p>
+            <p>${Localization.text('other.version')}: <strong>${version}</strong></p>
             <p><strong>Giancarlo Mangiagli</strong></p>
-            <p>www.giancarlomangiagli.it</p>
+            <p><a href="https://www.giancarlomangiagli.it">www.giancarlomangiagli.it</a></p>
+            <h3>${Localization.text('other.moreInfo')}</h3>
+            <p><a href="${moreInfoUrl}">${moreInfoUrl}</a></p>
             <p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
             `, () => this.clickEl(this.IdGoToInit));
     }

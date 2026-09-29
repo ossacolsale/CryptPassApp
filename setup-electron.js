@@ -8,7 +8,7 @@ const preloadPath = path.join(platformDir, 'cdv-electron-preload.js');
 const mainAppend = `
 
 // CryptPass narrow desktop API. Renderer supplied paths are never accepted.
-const { safeStorage, dialog } = require('electron');
+const { safeStorage, dialog, shell } = require('electron');
 const crypto = require('crypto');
 const cryptPassVaults = new Map();
 let cryptPassSecureFile;
@@ -140,7 +140,12 @@ app.on('web-contents-created', (_, contents) => {
             const allowed = isFileProtocol
                 ? target.protocol === 'file:' && path.resolve(decodeURIComponent(target.pathname)).startsWith(path.resolve(__dirname) + path.sep)
                 : target.protocol === scheme + ':' && target.host === hostname;
-            if (!allowed) event.preventDefault();
+            if (!allowed) {
+                event.preventDefault();
+                if (target.protocol === 'https:' && ['giancarlomangiagli.it', 'www.giancarlomangiagli.it'].includes(target.hostname)) {
+                    void shell.openExternal(target.href);
+                }
+            }
         } catch (_) { event.preventDefault(); }
     });
 });

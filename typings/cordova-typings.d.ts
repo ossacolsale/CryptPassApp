@@ -15,7 +15,7 @@ interface CryptPassDesktopAPI {
     onLockRequested?(callback: () => void): () => void;
 }
 
-interface Window { cryptPassDesktop?: CryptPassDesktopAPI; }
+interface Window { cryptPassDesktop?: CryptPassDesktopAPI; CRYPTPASS_APP_INFO?: { version: string }; }
 
 interface CordovaPlugins {
     SecureKeyStore: SecureKeyStore;
@@ -184,6 +184,15 @@ interface SecureStorageConstructor {
  */
 interface CordovaPlugins {
     SecureStorage: SecureStorageConstructor;
+    cryptPassStorage: CryptPassStoragePlugin;
+}
+
+interface CryptPassStoragePlugin {
+    deviceAuth: {
+        hasScreenLock(): Promise<boolean>;
+        confirm(title: string, description: string): Promise<boolean>;
+        showKeyboard(): Promise<void>;
+    };
 }
 
 interface FileChooserResult {

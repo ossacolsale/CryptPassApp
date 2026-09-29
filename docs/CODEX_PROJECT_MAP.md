@@ -186,31 +186,11 @@ Non modificare manualmente il bundle se il fix appartiene alla libreria: identif
 
 ### Stato attuale da conoscere
 
-Il repository ha storicamente usato due plugin custom:
+Il vault Android usa `local-plugins/cordova-plugin-cryptpass-storage`, che integra il flusso SAF e `CryptPassDeviceAuth`. Il secure storage è un fork separato in `local-plugins/cordova-plugin-cryptpass-secure-storage`. I vecchi plugin `cordova-plugin-save-dialog` e `cordova-plugin-simple-file-chooser-CUSTOM` non sono dipendenze runtime.
 
-- `cordova-plugin-save-dialog`
-- `cordova-plugin-simple-file-chooser`
+### Source of truth
 
-La revisione in corso sta migrando questa logica verso un plugin proprietario locale basato direttamente sul SAF.
-
-Per qualunque nuova modifica Android, non assumere che i vecchi plugin siano necessari solo perché compaiono nel manifest: cercare le chiamate effettive e verificare il plugin installato.
-
-### Obiettivo architetturale
-
-La soluzione preferita è un plugin Cordova locale, versionato nello stesso repository dell'app, che contenga direttamente il codice Java necessario al dominio CryptPass invece di patchare sorgenti generati durante `cordova prepare`.
-
-Preferire una struttura simile a:
-
-```text
-local-plugins/
-  cordova-plugin-cryptpass-android/
-    plugin.xml
-    src/android/...
-    www/...
-    types/...
-```
-
-Il nome effettivo deve seguire quello già adottato dal repository quando la migrazione viene implementata.
+Il codice Java Android dell'app risiede nei plugin locali versionati: `cordova-plugin-cryptpass-storage` gestisce SAF e DeviceAuth, `cordova-plugin-cryptpass-android-ui` applica gli Insets alla WebView, e il fork `cordova-plugin-cryptpass-secure-storage` gestisce metadata e chiavi. La configurazione Gradle debug risiede in `res/android/build-extras.gradle`. `platforms/android` contiene solo output generato.
 
 ### Funzionalità native Android candidate
 
@@ -226,31 +206,13 @@ Separare le responsabilità Java in classi distinte anche se il plugin è unico.
 
 ### Regola fondamentale
 
-Non utilizzare `android-after-prepare.js` per iniettare/patchare codice Java nei plugin o in `MainActivity.java` se la stessa cosa può essere dichiarata nel plugin, in `plugin.xml`, in una risorsa nativa o in una configurazione Gradle ufficiale.
+Non usare hook build-time per modificare sorgenti Java Android generati: il codice nativo dell'app appartiene ai plugin locali e la configurazione Gradle appartiene alle risorse Cordova versionate.
 
 ---
 
-## 6. `scripts/android-after-prepare.js`
+## 6. Android Insets
 
-Questo file è stato usato come contenitore di workaround Android.
-
-La versione in evoluzione del repository ha già rimosso la grande patch SAF che modificava `Chooser.java`.
-
-Le responsabilità storicamente rimaste sono:
-
-1. `debug` con `applicationIdSuffix`;
-2. generazione/registrazione di `CryptPassDeviceAuth.java`;
-3. patch di `secure-storage-echo` (`RSA.java` e `SecureStorage.java`);
-4. patch di `MainActivity.java` per gli insets/WebView.
-
-Ordine di migrazione preferito:
-
-- `applicationIdSuffix` → `build-extras.gradle` o configurazione equivalente stabile;
-- `CryptPassDeviceAuth` → vero plugin Cordova / sorgente nativo dichiarato;
-- patch secure storage → fork/repository locale del plugin oppure nuovo componente nativo controllato, preservando il comportamento e i dati;
-- insets → prima verificare se Cordova/WebView/CSS possono risolvere il problema; non conservare automaticamente un workaround Java solo perché esiste.
-
-Risultato desiderato: eliminazione dell'hook quando non contiene più una responsabilità che Cordova non può esprimere in modo strutturale.
+`cordova-plugin-cryptpass-android-ui` aspetta `deviceready` (quindi che `loadUrl` abbia caricato la pagina) prima di richiedere l'applicazione degli Insets al WebView. Il listener usa Insets di system bars e display cutout per impostare i margini su tutti i lati, includendo status bar, navbar e notch; li riapplica al resume e reagisce ai cambiamenti di orientamento. È codice sorgente del plugin; non modifica `MainActivity.java` generata.
 
 ---
 
@@ -453,8 +415,7 @@ Non reintrodurre probe che modificano il vault per diagnosticare un problema di 
 
 ## 14. Cose da NON fare senza prima verificare
 
-- Non eliminare `cordova-plugin-simple-file-chooser` solo perché non esiste più un picker di file singolo: il backend può usare lo stesso plugin per il tree SAF finché la migrazione non è completata.
-- Non eliminare `cordova-plugin-save-dialog` solo perché il nome non descrive il nuovo flusso: verificare le chiamate effettive e sostituirle con `ContentResolver` prima della rimozione.
+- I plugin `cordova-plugin-save-dialog` e `cordova-plugin-simple-file-chooser-CUSTOM` sono stati sostituiti dal plugin locale SAF. Non reintrodurli nel flusso vault.
 - Non assumere che una patch al secure storage sia ridondante: la policy `deviceSecure` può essere un requisito funzionale reale.
 - Non assumere che la patch insets sia necessaria: testare prima il comportamento nativo/CSS attuale.
 - Non modificare `platforms/android` come soluzione definitiva.
@@ -468,6 +429,7 @@ Un refactoring Android/storage è completo solo quando:
 
 - non esistono patch build-time del sorgente Java generate per ottenere il comportamento definitivo;
 - il codice Android permanente è dichiarato tramite plugin/configurazione versionata;
+- `scripts/android-after-prepare.js` non esiste e `MainActivity.java` non viene patchato dall'app;
 - i vecchi plugin non compaiono più né come dipendenze né come riferimenti reali, salvo motivazione documentata;
 - `platforms/` può essere cancellato e rigenerato senza perdere la funzionalità;
 - le build pulite producono lo stesso comportamento;

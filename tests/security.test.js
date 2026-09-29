@@ -78,7 +78,7 @@ test('Android storage is provided by the repository-local SAF plugin', () => {
     const appStorage = source('src/DataHandlers/FileSystem.ts');
     const packageJson = JSON.parse(source('package.json'));
     const typings = source('typings/cordova-typings.d.ts');
-    const androidHook = source('scripts/android-after-prepare.js');
+    const config = source('config.xml');
 
     assert.match(manifest, /id="cordova-plugin-cryptpass-storage"/);
     assert.match(manifest, /<platform name="android">/);
@@ -100,10 +100,55 @@ test('Android storage is provided by the repository-local SAF plugin', () => {
     assert.match(appStorage, /cordova\.plugins\.cryptPassStorage/);
     assert.doesNotMatch(appStorage, /saveDialog|chooser\.readFile|cordova\.exec/);
     assert.equal(packageJson.devDependencies['cordova-plugin-cryptpass-storage'], 'file:local-plugins/cordova-plugin-cryptpass-storage');
+    assert.equal(packageJson.devDependencies['cordova-plugin-cryptpass-secure-storage'], 'file:local-plugins/cordova-plugin-cryptpass-secure-storage');
     assert.ok(!JSON.stringify(packageJson).includes('cordova-plugin-save-dialog'));
     assert.ok(!JSON.stringify(packageJson).includes('cordova-plugin-simple-file-chooser'));
     assert.doesNotMatch(typings, /cordova-plugin-(save-dialog|simple-file-chooser)/);
-    assert.doesNotMatch(androidHook, /Chooser\.java|chooserPath|resolveFileInTree|ACTION_OPEN_DOCUMENT_TREE/);
+    assert.doesNotMatch(config, /android-after-prepare/);
+    assert.equal(fs.existsSync(path.join(root, 'scripts/android-after-prepare.js')), false);
+});
+
+
+test('Android DeviceAuth is registered in the existing local storage plugin', () => {
+    const pluginRoot = 'local-plugins/cordova-plugin-cryptpass-storage/';
+    const manifest = source(pluginRoot + 'plugin.xml');
+    const native = source(pluginRoot + 'src/android/CryptPassDeviceAuth.java');
+    const wrapper = source(pluginRoot + 'www/cryptpass-storage.js');
+    const app = source('src/main.ts');
+    const typings = source('typings/cordova-typings.d.ts');
+    assert.match(manifest, /name="CryptPassDeviceAuth"[\s\S]*?com\.cryptpass\.storage\.CryptPassDeviceAuth/);
+    assert.match(native, /"hasScreenLock"/);
+    assert.match(native, /"confirm"/);
+    assert.match(native, /"showKeyboard"/);
+    assert.match(wrapper, /callDeviceAuth\('hasScreenLock'/);
+    assert.match(wrapper, /callDeviceAuth\('confirm'/);
+    assert.match(wrapper, /callDeviceAuth\('showKeyboard'/);
+    assert.match(app, /cordova\.plugins\.cryptPassStorage\.deviceAuth\.confirm/);
+    assert.match(typings, /cryptPassStorage: CryptPassStoragePlugin/);
+});
+
+test('local secure-storage fork preserves aliases and supports locked and unlocked devices', () => {
+    const pluginRoot = 'local-plugins/cordova-plugin-cryptpass-secure-storage/';
+    const packageJson = JSON.parse(source(pluginRoot + 'package.json'));
+    const manifest = source(pluginRoot + 'plugin.xml');
+    const rsa = source(pluginRoot + 'src/android/RSA.java');
+    const secureStorage = source(pluginRoot + 'src/android/SecureStorage.java');
+    assert.equal(packageJson.cordova.id, 'cordova-plugin-cryptpass-secure-storage');
+    assert.match(manifest, /name="SecureStorage"/);
+    assert.match(rsa, /boolean deviceSecure = keyguard != null && keyguard\.isDeviceSecure\(\)/);
+    assert.match(rsa, /setUserAuthenticationRequired\(deviceSecure\)/);
+    assert.match(secureStorage, /String res = INIT_PACKAGENAME \+ "\." \+ service/);
+    assert.match(secureStorage, /INIT_SERVICE = service;[\s\S]*?SERVICE_STORAGE\.put\(service, PREFS\);\s*if \(!rsa\.encryptionKeysAvailable\(alias\)\)/);
+    assert.doesNotMatch(secureStorage, /if \(!isDeviceSecure\(\)\) \{\s*Log\.e\(TAG, MSG_DEVICE_NOT_SECURE\)/);
+});
+
+test('Android Gradle debug suffix is versioned and the Android prepare hook is gone', () => {
+    const config = source('config.xml');
+    const extras = source('res/android/build-extras.gradle');
+    assert.match(config, /<resource-file src="res\/android\/build-extras\.gradle" target="app\/build-extras\.gradle"/);
+    assert.doesNotMatch(config, /android-after-prepare/);
+    assert.match(extras, /debug \{[\s\S]*applicationIdSuffix '\.debug'/);
+    assert.doesNotMatch(extras, /release \{[\s\S]*applicationIdSuffix/);
 });
 
 test('new wallet setup generates a valid sequence before importing stored sequence data', async () => {

@@ -1,13 +1,14 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.cryptpass.app" version="1.2.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+<widget id="com.cryptpass.app" version="1.4.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
     <name>CryptPass</name>
     <description>Password wallet manager</description>
     <author email="email@giancarlomangiagli.it" href="https://www.giancarlomangiagli.it">
         Giancarlo Mangiagli
     </author>
     <content src="index.html" />
+    <allow-intent href="https://giancarlomangiagli.it/*" />
+    <allow-intent href="https://www.giancarlomangiagli.it/*" />
     <hook type="after_prepare" src="scripts/electron-after-prepare.js" />
-    <hook type="after_prepare" src="scripts/android-after-prepare.js" />
     <icon src="www/img/cp-512.png" width="512" height="512" density="mdpi" />
     <platform name="electron">
         <preference name="ElectronSettingsFilePath" value="src/settings/electron.json" />
@@ -20,5 +21,6 @@
         <preference name="android-compileSdkVersion" value="36" />
         <preference name="AndroidPersistentFileLocation" value="Compatibility" />
         <preference name="AndroidExtraFilesystems" value="files,files-external,documents,sdcard" />
+        <resource-file src="res/android/build-extras.gradle" target="app/build-extras.gradle" />
     </platform>
 </widget>

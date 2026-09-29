@@ -50,7 +50,7 @@ class OtherView extends View implements ViewModel {
         ${ViewHelpers.button(this.IdRestore,'Restore/reset wallet',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdInstructions,'Read instructions',this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdChangeDescr,Localization.text(passDescr===''?'other.changeDescriptionAdd':'other.changeDescription'),this.ClassMenuBtn)}
-        ${ViewHelpers.button(this.IdAbout,'About author',this.ClassMenuBtn)}
+        ${ViewHelpers.button(this.IdAbout,Localization.text('other.about'),this.ClassMenuBtn)}
         ${ViewHelpers.button(this.IdGoToMainMenu,'Go back',this.ClassFormBtnSec)}
         <p class="mt-3"><label for="AppLanguage">Language</label>
         <select id="AppLanguage" class="form-select"><option value="en">English</option><option value="it">Italiano</option></select></p>
@@ -118,10 +118,17 @@ class OtherView extends View implements ViewModel {
     }
 
     private showAbout() {
-        this.setApp(`<h2>About author</h2>
-            <p>CryptPass is Developed by<p>
+        const version = window.CRYPTPASS_APP_INFO?.version || '';
+        const moreInfoUrl = Localization.current() === 'it'
+            ? 'https://giancarlomangiagli.it/CryptPass_gestore_di_password.html'
+            : 'https://giancarlomangiagli.it/en/CryptPass_password_manager.html';
+        this.setApp(`<h2>${Localization.text('other.aboutHeading')}</h2>
+            <p>CryptPass</p>
+            <p>${Localization.text('other.version')}: <strong>${version}</strong></p>
             <p><strong>Giancarlo Mangiagli</strong></p>
-            <p>www.giancarlomangiagli.it</p>
+            <p><a href="https://www.giancarlomangiagli.it">www.giancarlomangiagli.it</a></p>
+            <h3>${Localization.text('other.moreInfo')}</h3>
+            <p><a href="${moreInfoUrl}">${moreInfoUrl}</a></p>
             <p>${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)}</p>
             `, () => this.clickEl(this.IdGoToInit));
     }

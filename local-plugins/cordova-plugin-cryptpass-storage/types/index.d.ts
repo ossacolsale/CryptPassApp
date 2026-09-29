@@ -10,6 +10,11 @@ interface CryptPassStoragePlugin {
     createFileInTree(treeUri: string, fileName: string, contents: string): Promise<string>;
     readFile(uri: string): Promise<string>;
     writeFile(uri: string, contents: string): Promise<void>;
+    deviceAuth: {
+        hasScreenLock(): Promise<boolean>;
+        confirm(title: string, description: string): Promise<boolean>;
+        showKeyboard(): Promise<void>;
+    };
 }
 
 interface CordovaPlugins {

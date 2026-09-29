@@ -6,6 +6,12 @@ function call(action, args) {
     });
 }
 
+function callDeviceAuth(action, args) {
+    return new Promise((resolve, reject) => {
+        exec(resolve, reject, 'CryptPassDeviceAuth', action, args);
+    });
+}
+
 module.exports = {
     selectVaultFolder() {
         return call('selectVaultFolder', []);
@@ -21,5 +27,16 @@ module.exports = {
     },
     writeFile(uri, contents) {
         return call('writeFile', [uri, contents]);
+    },
+    deviceAuth: {
+        hasScreenLock() {
+            return callDeviceAuth('hasScreenLock', []).then(result => result === 'true');
+        },
+        confirm(title, description) {
+            return callDeviceAuth('confirm', [title, description]).then(result => result === 'true');
+        },
+        showKeyboard() {
+            return callDeviceAuth('showKeyboard', []);
+        }
     }
 };

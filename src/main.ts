@@ -223,26 +223,19 @@ class AutoLock {
 
 class DeviceAuth {
     private static call(action: 'hasScreenLock' | 'confirm'): Promise<boolean> {
-        return new Promise((resolve, reject) => (cordova.exec as any)(
-            (result: string) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', action, []
-        ));
+        if (action === 'hasScreenLock') return cordova.plugins.cryptPassStorage.deviceAuth.hasScreenLock();
+        return this.confirm();
     }
     public static hasScreenLock(): Promise<boolean> { return this.call('hasScreenLock'); }
     public static confirm(): Promise<boolean> {
-        return new Promise((resolve, reject) => (cordova.exec as any)(
-            (result: string) => resolve(result === 'true'), reject, 'CryptPassDeviceAuth', 'confirm', [
-                Localization.text('main.deviceAuthTitle'), Localization.text('main.deviceAuthDescription')
-            ]
-        ));
+        return cordova.plugins.cryptPassStorage.deviceAuth.confirm(
+            Localization.text('main.deviceAuthTitle'), Localization.text('main.deviceAuthDescription')
+        );
     }
     public static showKeyboard(): void {
         if (cordova.platformId !== 'android') return;
-        window.setTimeout(() => (cordova.exec as any)(
-            () => undefined,
-            (error: unknown) => console.error('Could not open the Android keyboard', error),
-            'CryptPassDeviceAuth',
-            'showKeyboard',
-            []
+        window.setTimeout(() => void cordova.plugins.cryptPassStorage.deviceAuth.showKeyboard().catch(
+            (error: unknown) => console.error('Could not open the Android keyboard', error)
         ), 120);
     }
 }

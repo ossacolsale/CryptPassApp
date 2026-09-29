@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        id="cordova-plugin-cryptpass-android-ui"
+        version="1.0.1">
+    <name>CryptPass Android UI</name>
+    <description>Applies Android system bar and display cutout insets to the CryptPass WebView.</description>
+    <license>Apache-2.0</license>
+
+    <platform name="android">
+        <js-module src="www/cryptpass-window-insets.js" name="CryptPassWindowInsetsInit">
+            <runs />
+        </js-module>
+
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="CryptPassWindowInsets">
+                <param name="android-package" value="com.cryptpass.androidui.CryptPassWindowInsets" />
+            </feature>
+        </config-file>
+        <source-file src="src/android/CryptPassWindowInsets.java" target-dir="src/com/cryptpass/androidui" />
+    </platform>
+</plugin>

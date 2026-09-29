@@ -1,7 +1,7 @@
 {
   "name": "com.cryptpass.app",
   "displayName": "CryptPass",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "A sample Apache Cordova application that responds to the deviceready event.",
   "main": "index.js",
   "scripts": {
@@ -14,7 +14,7 @@
     "electron-compile": "npm run cryptpass:build && npm run locales:build && tsc",
     "cryptpass:build": "npm run build --prefix node_modules/cryptpass && npm run bundle --prefix node_modules/cryptpass && node scripts/copy-cryptpass-bundle.js",
     "postinstall": "node scripts/patch-cordova-electron.js",
-    "locales:build": "node scripts/build-locales.js"
+    "locales:build": "node scripts/build-locales.js && node scripts/build-app-info.js"
   },
   "keywords": [
     "ecosystem:cordova"
@@ -28,14 +28,15 @@
     "cordova-browser": "7.0.0",
     "cordova-clipboard": "^1.3.0",
     "cordova-electron": "4.0.0",
-    "cordova-plugin-secure-storage-echo": "^5.1.1",
+    "cordova-plugin-cryptpass-secure-storage": "file:local-plugins/cordova-plugin-cryptpass-secure-storage",
+    "cordova-plugin-cryptpass-storage": "file:local-plugins/cordova-plugin-cryptpass-storage",
     "electron": "44.4.5",
     "esbuild": "^0.28.2",
     "events": "^3.3.0",
     "jsdom": "^26.1.0",
     "process": "^0.11.10",
     "typescript": "^5.9.3",
-    "cordova-plugin-cryptpass-storage": "file:local-plugins/cordova-plugin-cryptpass-storage"
+    "cordova-plugin-cryptpass-android-ui": "file:local-plugins/cordova-plugin-cryptpass-android-ui"
   },
   "cordova": {
     "platforms": [
@@ -45,8 +46,9 @@
     ],
     "plugins": {
       "cordova-clipboard": {},
-      "cordova-plugin-secure-storage-echo": {},
-      "cordova-plugin-cryptpass-storage": {}
+      "cordova-plugin-cryptpass-secure-storage": {},
+      "cordova-plugin-cryptpass-storage": {},
+      "cordova-plugin-cryptpass-android-ui": {}
     }
   },
   "dependencies": {

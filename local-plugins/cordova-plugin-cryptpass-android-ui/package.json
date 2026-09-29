@@ -1,0 +1,12 @@
+{
+  "name": "cordova-plugin-cryptpass-android-ui",
+  "version": "1.0.1",
+  "description": "CryptPass Android edge-to-edge WebView insets",
+  "cordova": {
+    "id": "cordova-plugin-cryptpass-android-ui",
+    "platforms": [
+      "android"
+    ]
+  },
+  "license": "Apache-2.0"
+}

@@ -15,8 +15,12 @@
             <feature name="CryptPassStorage">
                 <param name="android-package" value="com.cryptpass.storage.CryptPassStorage" />
             </feature>
+            <feature name="CryptPassDeviceAuth">
+                <param name="android-package" value="com.cryptpass.storage.CryptPassDeviceAuth" />
+            </feature>
         </config-file>
 
         <source-file src="src/android/CryptPassStorage.java" target-dir="src/com/cryptpass/storage" />
+        <source-file src="src/android/CryptPassDeviceAuth.java" target-dir="src/com/cryptpass/storage" />
     </platform>
 </plugin>
