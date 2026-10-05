@@ -30,10 +30,10 @@
     "cordova-electron": "4.0.0",
     "cordova-plugin-cryptpass-secure-storage": "file:local-plugins/cordova-plugin-cryptpass-secure-storage",
     "cordova-plugin-cryptpass-storage": "file:local-plugins/cordova-plugin-cryptpass-storage",
-    "electron": "44.4.5",
+    "electron": "44.5.1",
     "esbuild": "^0.28.2",
     "events": "^3.3.0",
-    "jsdom": "^26.1.0",
+    "jsdom": "29.1.1",
     "process": "^0.11.10",
     "typescript": "^5.9.3",
     "cordova-plugin-cryptpass-android-ui": "file:local-plugins/cordova-plugin-cryptpass-android-ui"
@@ -55,7 +55,7 @@
     "cryptpass": "git+https://github.com/ossacolsale/CryptPass.git"
   },
   "overrides": {
-    "electron": "44.4.5",
+    "electron": "44.5.1",
     "electron-builder": "26.15.3",
     "tar": "7.5.22"
   }
