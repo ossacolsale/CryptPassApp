@@ -62,6 +62,33 @@ test('Electron renderer has no arbitrary filesystem IPC and main validates IPC s
     assert.match(setup, /safeStorage\.encryptString/);
 });
 
+test('Electron sandbox is enabled while the Cordova preload stays within sandbox APIs', () => {
+    const settings = JSON.parse(source('src/settings/electron.json'));
+    const setup = source('setup-electron.js');
+    const patch = source('scripts/electron-after-prepare.js');
+    assert.equal(settings.browserWindow.webPreferences.sandbox, true);
+    assert.equal(settings.browserWindow.webPreferences.nodeIntegration, false);
+    assert.equal(settings.browserWindow.webPreferences.contextIsolation, true);
+    assert.match(setup, /browserWindowOpts\.webPreferences\.sandbox = false/);
+    assert.match(setup, /const preloadPackageImport = "const \{ cordova \} = require\('\.\/package\.json'\);"/);
+    assert.match(setup, /preload = preload\.replace\(preloadPackageImport, `const cordova = \$\{JSON\.stringify\(cordovaConfig\)\};`\)/);
+    assert.match(setup, /main = main\.replace\(sandboxOverride, ''\)/);
+    assert.match(patch, /require\('\.\.\/setup-electron\.js'\)/);
+});
+
+test('Electron bridge covers vault lifecycle, secure storage, locking, and navigation boundaries', () => {
+    const setup = source('setup-electron.js');
+    for (const channel of [
+        'cryptpass:openVault', 'cryptpass:createVault', 'cryptpass:readVault', 'cryptpass:saveVault',
+        'cryptpass:secureStorageStatus', 'cryptpass:secureGet', 'cryptpass:secureSet',
+        'cryptpass:secureDelete', 'cryptpass:focusWindow'
+    ]) assert.ok(setup.includes(channel), `missing Electron bridge channel ${channel}`);
+    assert.match(setup, /window\.on\('minimize', \(\) => window\.webContents\.send\('cryptpass:lock'\)\)/);
+    assert.match(setup, /contents\.setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
+    assert.match(setup, /contents\.on\('will-navigate'/);
+    assert.match(setup, /frame !== mainWindow\.webContents\.mainFrame/);
+});
+
 test('Electron secure storage only accepts named app configuration and profile keys', () => {
     const setup = source('setup-electron.js');
     assert.match(setup, /\['cryptPassCfg', 'cryptPassWalletProfiles'\]\.includes\(key\)/);
@@ -169,6 +196,32 @@ test('new wallet setup generates a valid sequence before importing stored sequen
     assert.equal(await freshConfig.initSeqAndKey('a-long-test-password'), true);
     assert.equal(writes.sequence.Sequence.length, 26);
     assert.equal(writes.keypass.Key.MasterKChunks.length, 26);
+});
+
+test('unlock rejects hostile scrypt metadata before deriving a key', async () => {
+    const writes = {};
+    const writers = {
+        SequenceWriter: async value => { writes.sequence = value; return true; },
+        KeyPassWriter: async value => { writes.keypass = value; return true; }
+    };
+    const setup = new ConfigCryptPass(writers, {});
+    assert.equal(await setup.initSeqAndKey('a-long-test-password'), true);
+
+    const keypass = JSON.parse(JSON.stringify(writes.keypass));
+    const sequence = JSON.parse(JSON.stringify(writes.sequence));
+    keypass.Key.Kdf = { name: 'scrypt', N: 1048576, r: 32, p: 16 };
+
+    const scrypt = require('scrypt-js');
+    const originalSyncScrypt = scrypt.syncScrypt;
+    let calls = 0;
+    scrypt.syncScrypt = (...args) => { calls++; return originalSyncScrypt(...args); };
+    try {
+        const unlock = new ConfigCryptPass(writers, keypass, sequence);
+        assert.equal(unlock.checkPwd('a-long-test-password'), false);
+        assert.equal(calls, 0, 'hostile vault metadata must be rejected before scrypt');
+    } finally {
+        scrypt.syncScrypt = originalSyncScrypt;
+    }
 });
 
 test('Android stable vault references retain their localStorage grant mapping', () => {

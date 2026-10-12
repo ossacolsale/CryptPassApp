@@ -177,6 +177,14 @@ contextBridge.exposeInMainWorld('cryptPassDesktop', {
 try {
     let main = fs.readFileSync(mainPath, 'utf8');
     let preload = fs.readFileSync(preloadPath, 'utf8');
+    const packagePath = path.join(__dirname, 'platforms/electron/www/package.json');
+    const cordovaConfig = JSON.parse(fs.readFileSync(packagePath, 'utf8')).cordova || {};
+    const sandboxOverride = '    browserWindowOpts.webPreferences.sandbox = false;\n';
+    const preloadPackageImport = "const { cordova } = require('./package.json');";
+    if (main.includes(sandboxOverride)) main = main.replace(sandboxOverride, '');
+    else if (!main.includes('browserWindowOpts.webPreferences.contextIsolation = true;')) throw new Error('Cannot locate Cordova Electron BrowserWindow configuration');
+    if (preload.includes(preloadPackageImport)) preload = preload.replace(preloadPackageImport, `const cordova = ${JSON.stringify(cordovaConfig)};`);
+    else if (!preload.includes('const cordova = ')) throw new Error('Cannot locate Cordova Electron preload package import');
     main = main.replace(/\nipcMain\.handle\('fsread'[\s\S]*?require\('electron'\)\.Menu\.setApplicationMenu\(null\);\s*/, '\n');
     main = main.replace("ipcMain.handle('cdv-plugin-exec', async (_, serviceName, action, ...args) => {", "ipcMain.handle('cdv-plugin-exec', async (event, serviceName, action, ...args) => {\n    cryptPassAssertSender(event);");
     preload = preload.replace(/\ncontextBridge\.exposeInMainWorld\('fs',[\s\S]*?\n\}\);\s*/, '\n');
@@ -194,6 +202,6 @@ try {
     }
     console.log('Electron security boundary configured');
 } catch (error) {
-    console.error('Electron configuration failed');
+    console.error('Electron configuration failed:', error.message);
     process.exitCode = 1;
 }

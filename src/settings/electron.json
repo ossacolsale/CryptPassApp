@@ -5,7 +5,7 @@
       "devTools": false,
       "nodeIntegration": false,
       "contextIsolation": true,
-      "sandbox": false,
+      "sandbox": true,
       "webSecurity": true,
       "allowRunningInsecureContent": false,
       "webviewTag": false

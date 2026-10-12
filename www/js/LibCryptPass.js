@@ -10272,6 +10272,16 @@ var LibCryptPass = (() => {
       var { createCipheriv, createDecipheriv } = require_browser3();
       var randomBytes = require_browser4();
       var CommonSymEnc = class {
+        static ValidateKdfParams(params, allowLegacy = false) {
+          if (params === null || typeof params !== "object")
+            return false;
+          const p = params;
+          if (!Number.isInteger(p.N) || !Number.isInteger(p.r) || !Number.isInteger(p.p))
+            return false;
+          const current = p.N === 65536 && p.r === 8 && p.p === 1;
+          const legacy = allowLegacy && p.N === 16384 && p.r === 8 && p.p === 1;
+          return current || legacy;
+        }
         static RandomKey() {
           return this.RandomBytesGenerator(32);
         }
@@ -10279,7 +10289,7 @@ var LibCryptPass = (() => {
           return this.RandomBytesGenerator(12);
         }
         static DeriveKey(password, saltHex, params = this.KdfParams) {
-          if (!password || typeof password !== "string" || !/^[0-9a-f]{32,128}$/i.test(saltHex))
+          if (!password || typeof password !== "string" || typeof saltHex !== "string" || !/^[0-9a-f]{32,128}$/i.test(saltHex) || !this.ValidateKdfParams(params))
             throw new Error("Invalid cryptographic input");
           const normalized = import_buffer.Buffer.from(password.normalize("NFKC"));
           return import_buffer.Buffer.from((0, scrypt_js_1.syncScrypt)(normalized, import_buffer.Buffer.from(saltHex, "hex"), params.N, params.r, params.p, 32));
@@ -10323,7 +10333,10 @@ var LibCryptPass = (() => {
           return { key: d.substring(0, 32), iv: d.substring(32, 16) };
         }
         static legacyScrypt(password, salt, len) {
-          return import_buffer.Buffer.from((0, scrypt_js_1.syncScrypt)(import_buffer.Buffer.from(password.normalize("NFKC")), import_buffer.Buffer.from(salt.normalize("NFKC")), 16384, 8, 1, len));
+          const params = { N: 16384, r: 8, p: 1 };
+          if (!this.ValidateKdfParams(params, true))
+            throw new Error("Invalid cryptographic input");
+          return import_buffer.Buffer.from((0, scrypt_js_1.syncScrypt)(import_buffer.Buffer.from(password.normalize("NFKC")), import_buffer.Buffer.from(salt.normalize("NFKC")), params.N, params.r, params.p, len));
         }
         static LegacyDecryptByPassword(password, salt, cipherText) {
           try {
@@ -10362,6 +10375,8 @@ var LibCryptPass = (() => {
         const password = import_buffer.Buffer.from(Password.normalize("NFKC"));
         const salt = import_buffer.Buffer.from(Salt.normalize("NFKC"));
         const p = _a.KdfParams;
+        if (!_a.ValidateKdfParams(p))
+          throw new Error("Invalid cryptographic input");
         return import_buffer.Buffer.from((0, scrypt_js_1.syncScrypt)(password, salt, p.N, p.r, p.p, KeyLen));
       };
     }
@@ -10673,7 +10688,7 @@ var LibCryptPass = (() => {
             const ciphertext = joined.join("");
             if (this._KeyPass.FormatVersion === 2) {
               const kdf = this._KeyPass.Kdf;
-              if (!kdf || kdf.name !== "scrypt" || !Number.isInteger(kdf.N) || kdf.N < 16384 || kdf.N > 1048576 || !Number.isInteger(kdf.r) || kdf.r < 1 || kdf.r > 32 || !Number.isInteger(kdf.p) || kdf.p < 1 || kdf.p > 16)
+              if (!kdf || kdf.name !== "scrypt" || !Common_1.CommonSymEnc.ValidateKdfParams(kdf))
                 return false;
               const key = Common_1.CommonSymEnc.DecryptWithPassword(password, this._KeyPass.Salt, ciphertext, kdf);
               if (!/^[0-9a-f]{64}$/i.test(key))
