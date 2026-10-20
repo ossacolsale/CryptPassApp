@@ -215,7 +215,17 @@ class AutoLock {
         try { authenticated = await DeviceAuth.confirm(); } catch (_) { /* Leave the credential button available for another attempt. */ }
         if (!authenticated) return false;
         this.deviceUnlockPassword = undefined;
-        if (!await new AppActions().Unlock(password)) return false;
+        const actions = new AppActions();
+        const unlock = await actions.Unlock(password);
+        if (unlock.status === 'migration-required') {
+            if (!unlock.notice) {
+                actions.CancelLegacyMigration();
+                window.alert(Localization.text('main.legacyMigrationUnavailable'));
+                return false;
+            }
+            if (!window.confirm(Localization.text('main.legacyMigrationConfirm'))) { actions.CancelLegacyMigration(); return false; }
+            if (!await actions.MigrateLegacy(password)) return false;
+        } else if (unlock.status !== 'unlocked') return false;
         if (!ScenarioController.restoreLockedScenario()) ScenarioController.changeScenario(new PassView());
         return true;
     }

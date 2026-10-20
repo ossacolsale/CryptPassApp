@@ -10500,8 +10500,18 @@ var LibCryptPass = (() => {
       exports.KeyPassManage = void 0;
       var Common_1 = require_Common();
       var EntriesManage_1 = require_EntriesManage();
-      var KeyPassManage = class {
+      var KeyPassManage = class _KeyPassManage {
+        get isLegacyVault() {
+          return this._KeyPass.FormatVersion !== 2;
+        }
+        get MigrationRequired() {
+          return this._migrationRequired;
+        }
+        get MigrationNotice() {
+          return this.MigrationRequired ? _KeyPassManage.LegacyMigrationNotice : void 0;
+        }
         constructor(keypass, seqManage) {
+          this._migrationRequired = false;
           this._KeyPass = keypass;
           this._SeqManage = seqManage;
           this._EntriesManage = new EntriesManage_1.EntriesManage({});
@@ -10548,6 +10558,8 @@ var LibCryptPass = (() => {
         }
         RefreshSequence(password) {
           return __awaiter(this, void 0, void 0, function* () {
+            if (this.isLegacyVault)
+              return false;
             const oldKey = this.GetK(password);
             if (oldKey === false)
               return false;
@@ -10585,11 +10597,127 @@ var LibCryptPass = (() => {
           return true;
         }
         CheckPassword(password) {
-          return this.GetK(password) !== false;
+          const key = this.GetK(password);
+          if (key === false) {
+            this._migrationRequired = false;
+            return false;
+          }
+          if (this.isLegacyVault) {
+            try {
+              this.decryptLegacyEntries(key);
+            } catch (_) {
+              this._migrationRequired = false;
+              return false;
+            }
+            this._migrationRequired = true;
+          } else
+            this._migrationRequired = false;
+          return true;
+        }
+        MigrateLegacy(password) {
+          return __awaiter(this, void 0, void 0, function* () {
+            if (!this.isLegacyVault)
+              return true;
+            const legacyKey = this.GetK(password);
+            if (legacyKey === false)
+              return false;
+            let entries;
+            try {
+              entries = this.decryptLegacyEntries(legacyKey);
+            } catch (_) {
+              return false;
+            }
+            const original = this._KeyPass.Snapshot();
+            let committed = false;
+            try {
+              const salt = Common_1.CommonSymEnc.GenerateSalt();
+              const key = Common_1.CommonSymEnc.GenerateRandomKey();
+              const encryptedMaster = this.EncryptMaster(password, salt, key);
+              const chunks = this.Chunk(encryptedMaster);
+              const encryptedEntries = JSON.stringify(Common_1.CommonSymEnc.EncryptAead(import_buffer.Buffer.from(key, "hex"), JSON.stringify(entries), "CryptPass:entries:v2"));
+              const state = { Salt: salt, MasterKChunks: chunks, FormatVersion: 2, Kdf: Object.assign({ name: "scrypt" }, Common_1.CommonSymEnc.KdfParams), Entries: encryptedEntries };
+              const reopenedMaster = Common_1.CommonSymEnc.DecryptWithPassword(password, salt, this._SeqManage.Sequence.Sequence.map((i) => chunks[i]).join(""));
+              if (reopenedMaster !== key)
+                return false;
+              const reopenedEntries = JSON.parse(Common_1.CommonSymEnc.DecryptAead(import_buffer.Buffer.from(key, "hex"), JSON.parse(encryptedEntries), "CryptPass:entries:v2"));
+              this.validateEntries(reopenedEntries);
+              if (!(yield this._KeyPass.ReplaceVaultState(state, true)))
+                return false;
+              committed = true;
+              const snapshot = this._KeyPass.Snapshot();
+              const persistedKey = this.openV2Master(snapshot, password);
+              const persistedEntries = JSON.parse(Common_1.CommonSymEnc.DecryptAead(import_buffer.Buffer.from(persistedKey, "hex"), JSON.parse(snapshot.Pass.Entries), "CryptPass:entries:v2"));
+              this.validateEntries(persistedEntries);
+              this._migrationRequired = false;
+              return true;
+            } catch (_) {
+              if (committed)
+                yield this._KeyPass.RestoreSnapshot(original, true);
+              return false;
+            }
+          });
+        }
+        openV2Master(snapshot, password) {
+          const seq = this._SeqManage.Sequence.Sequence;
+          const joined = new Array(26);
+          for (let i = 0; i < 26; i++)
+            joined[i] = snapshot.Key.MasterKChunks[seq[i]];
+          const kdf = snapshot.Key.Kdf;
+          if (snapshot.Key.FormatVersion !== 2 || !kdf || kdf.name !== "scrypt" || !Common_1.CommonSymEnc.ValidateKdfParams(kdf))
+            throw new Error("Invalid vault");
+          const master = Common_1.CommonSymEnc.DecryptWithPassword(password, snapshot.Key.Salt, joined.join(""), kdf);
+          if (!/^[0-9a-f]{64}$/i.test(master))
+            throw new Error("Invalid vault");
+          return master;
+        }
+        validateEntries(value) {
+          const fail = () => {
+            throw new Error("Invalid legacy entries");
+          };
+          if (!value || typeof value !== "object" || Array.isArray(value))
+            return fail();
+          const entries = value;
+          const names = Object.keys(entries);
+          if (names.length > 1e4)
+            return fail();
+          const entryFields = /* @__PURE__ */ new Set(["Name", "Description", "Tags", "Username", "Password", "PIN", "Other", "Date", "DateStr"]);
+          for (const name of names) {
+            if (!name || name.length > 256)
+              return fail();
+            const item = entries[name];
+            if (!item || typeof item !== "object" || Array.isArray(item))
+              return fail();
+            const entry = item;
+            if (Object.keys(entry).some((k) => !entryFields.has(k)))
+              return fail();
+            for (const field of ["Name", "Description", "Tags", "Username", "Password", "PIN", "DateStr"]) {
+              const v = entry[field];
+              if (v !== void 0 && (typeof v !== "string" || v.length > (field === "Password" ? 65536 : 16384)))
+                return fail();
+            }
+            if (entry.DateStr !== void 0 && (!entry.DateStr || !Number.isFinite(Date.parse(entry.DateStr))))
+              return fail();
+            if (entry.Date !== void 0 && !(typeof entry.Date === "string" && entry.Date.length <= 64 && Number.isFinite(Date.parse(entry.Date))))
+              return fail();
+            if (entry.Other !== void 0) {
+              if (!entry.Other || typeof entry.Other !== "object" || Array.isArray(entry.Other) || Object.keys(entry.Other).length > 1e3)
+                return fail();
+              for (const [k, v] of Object.entries(entry.Other))
+                if (!k || k.length > 256 || typeof v !== "string" || v.length > 16384)
+                  return fail();
+            }
+          }
+          return value;
+        }
+        decryptLegacyEntries(key) {
+          const plaintext = this.MasterDecrypt(key, this._KeyPass.GetEntries(), true);
+          if (import_buffer.Buffer.byteLength(plaintext, "utf8") > 10 * 1024 * 1024)
+            throw new Error("Invalid legacy entries");
+          return this.validateEntries(JSON.parse(plaintext));
         }
         ChangePassword(oldPassword, newPassword) {
           return __awaiter(this, void 0, void 0, function* () {
-            if (!newPassword)
+            if (!newPassword || this.isLegacyVault)
               return false;
             const oldK = this.GetK(oldPassword);
             if (oldK === false)
@@ -10690,13 +10818,18 @@ var LibCryptPass = (() => {
               const kdf = this._KeyPass.Kdf;
               if (!kdf || kdf.name !== "scrypt" || !Common_1.CommonSymEnc.ValidateKdfParams(kdf))
                 return false;
-              const key = Common_1.CommonSymEnc.DecryptWithPassword(password, this._KeyPass.Salt, ciphertext, kdf);
-              if (!/^[0-9a-f]{64}$/i.test(key))
+              const key2 = Common_1.CommonSymEnc.DecryptWithPassword(password, this._KeyPass.Salt, ciphertext, kdf);
+              if (!/^[0-9a-f]{64}$/i.test(key2))
                 return false;
-              return key;
+              this._migrationRequired = false;
+              return key2;
             }
-            return Common_1.CommonSymEnc.LegacyDecryptByPassword(password, this._KeyPass.Salt, ciphertext);
+            const key = Common_1.CommonSymEnc.LegacyDecryptByPassword(password, this._KeyPass.Salt, ciphertext);
+            this.decryptLegacyEntries(key);
+            this._migrationRequired = true;
+            return key;
           } catch (_) {
+            this._migrationRequired = false;
             return false;
           }
         }
@@ -10713,6 +10846,8 @@ var LibCryptPass = (() => {
           });
         }
         GetEntriesManage(password, isK = false) {
+          if (this.isLegacyVault)
+            throw new Error(_KeyPassManage.LegacyMigrationNotice);
           this.getEntries(password, isK);
           return this._EntriesManage;
         }
@@ -10725,19 +10860,15 @@ var LibCryptPass = (() => {
           return this._KeyPass.GetDescription();
         }
         getEntries(passwordOrK, isK = false) {
+          if (this.isLegacyVault)
+            throw new Error(_KeyPassManage.LegacyMigrationNotice);
           this._EntriesManage.Entries = JSON.parse(this.MasterDecrypt(passwordOrK, this._KeyPass.GetEntries(), isK));
         }
         setEntries(passwordOrK_1) {
           return __awaiter(this, arguments, void 0, function* (passwordOrK, isK = false) {
             try {
-              if (this._KeyPass.FormatVersion !== 2 && !isK) {
-                const salt = Common_1.CommonSymEnc.GenerateSalt(), key = Common_1.CommonSymEnc.GenerateRandomKey();
-                this._KeyPass.Salt = salt;
-                this._KeyPass.FormatVersion = 2;
-                this._KeyPass.Kdf = Object.assign({ name: "scrypt" }, Common_1.CommonSymEnc.KdfParams);
-                this._KeyPass.MasterKChunks = this.Chunk(this.EncryptMaster(passwordOrK, salt, key));
-                return yield this._KeyPass.SetEntries(JSON.stringify(Common_1.CommonSymEnc.EncryptAead(import_buffer.Buffer.from(key, "hex"), JSON.stringify(this._EntriesManage.Export()), "CryptPass:entries:v2")));
-              }
+              if (this.isLegacyVault)
+                return false;
               return yield this._KeyPass.SetEntries(this.MasterEncrypt(passwordOrK, JSON.stringify(this._EntriesManage.Export()), isK));
             } catch (_) {
               throw new Error("Vault update failed");
@@ -10790,6 +10921,7 @@ var LibCryptPass = (() => {
         }
       };
       exports.KeyPassManage = KeyPassManage;
+      KeyPassManage.LegacyMigrationNotice = "This legacy vault uses unauthenticated AES-CBC. Its integrity cannot be verified retroactively; review your entries before migration.";
     }
   });
 
@@ -10950,6 +11082,42 @@ var LibCryptPass = (() => {
           return __awaiter(this, void 0, void 0, function* () {
             this._Obj.Pass.Entries = entries;
             return this.Export();
+          });
+        }
+        ReplaceVaultState(state_1) {
+          return __awaiter(this, arguments, void 0, function* (state, keepBackup = true) {
+            const previous = { Salt: this._Salt, chunks: this._MasterKChunks.slice(), version: this._FormatVersion, kdf: this._Kdf, entries: this._Obj.Pass.Entries, key: JSON.parse(JSON.stringify(this._Obj.Key)) };
+            try {
+              this.Salt = state.Salt;
+              this.MasterKChunks = state.MasterKChunks;
+              this.FormatVersion = state.FormatVersion;
+              this.Kdf = state.Kdf;
+              this._Obj.Pass.Entries = state.Entries;
+              if (yield this.Export(keepBackup))
+                return true;
+            } catch (_) {
+            }
+            this._Salt = previous.Salt;
+            this._MasterKChunks = previous.chunks;
+            this._FormatVersion = previous.version;
+            this._Kdf = previous.kdf;
+            this._Obj.Key = previous.key;
+            this._Obj.Pass.Entries = previous.entries;
+            return false;
+          });
+        }
+        Snapshot() {
+          return JSON.parse(JSON.stringify(this.Save()));
+        }
+        RestoreSnapshot(snapshot_1) {
+          return __awaiter(this, arguments, void 0, function* (snapshot, keepBackup = true) {
+            this._Obj = JSON.parse(JSON.stringify(snapshot));
+            this._Salt = snapshot.Key.Salt;
+            this._MasterKChunks = snapshot.Key.MasterKChunks.slice();
+            this._FormatVersion = snapshot.Key.FormatVersion;
+            this._Kdf = snapshot.Key.Kdf;
+            this._LastChange = new Date(snapshot.Key.LastChange);
+            return this.Export(keepBackup);
           });
         }
         GetEntries() {
@@ -11208,6 +11376,17 @@ var LibCryptPass = (() => {
         checkPwd(password) {
           return this._KPM.CheckPassword(password);
         }
+        get migrationRequired() {
+          return this._KPM.MigrationRequired;
+        }
+        get migrationNotice() {
+          return this._KPM.MigrationNotice;
+        }
+        migrateLegacy(password) {
+          return __awaiter(this, void 0, void 0, function* () {
+            return this._KPM.MigrateLegacy(password);
+          });
+        }
         chPwd(oldPassword, newPassword) {
           return __awaiter(this, void 0, void 0, function* () {
             return this._KPM.ChangePassword(oldPassword, newPassword);
@@ -11222,6 +11401,17 @@ var LibCryptPass = (() => {
       var CryptPassCached = class {
         constructor(ObjRW, KeyPassObj, SequenceObj) {
           this._KPM = new KeyPassManage_1.KeyPassManage(new KeyPass_1.KeyPass(ObjRW.KeyPassWriter, KeyPassObj), new SequenceManage_1.SequenceManage(new Sequence_1.Sequence(ObjRW.SequenceWriter, SequenceObj)));
+        }
+        get MigrationRequired() {
+          return this._KPM.MigrationRequired;
+        }
+        get MigrationNotice() {
+          return this._KPM.MigrationNotice;
+        }
+        MigrateLegacy(password) {
+          return __awaiter(this, void 0, void 0, function* () {
+            return this._KPM.MigrateLegacy(password);
+          });
         }
         getPassDescription() {
           return this._KPM.getPassDescription();
@@ -11248,6 +11438,17 @@ var LibCryptPass = (() => {
         constructor(password, ObjRW, KeyPassObj, SequenceObj) {
           this._Password = password;
           this._KPM = new KeyPassManage_1.KeyPassManage(new KeyPass_1.KeyPass(ObjRW.KeyPassWriter, KeyPassObj), new SequenceManage_1.SequenceManage(new Sequence_1.Sequence(ObjRW.SequenceWriter, SequenceObj)));
+        }
+        get migrationRequired() {
+          return this._KPM.MigrationRequired;
+        }
+        get migrationNotice() {
+          return this._KPM.MigrationNotice;
+        }
+        migrateLegacy() {
+          return __awaiter(this, void 0, void 0, function* () {
+            return this._KPM.MigrateLegacy(this._Password);
+          });
         }
         getPassDescription() {
           return this._KPM.getPassDescription();

@@ -122,6 +122,10 @@ class Config {
         else return false;
     }
 
+    public static async getActiveKeyPassUri(): Promise<string|false> {
+        return this.getKeyPassPath();
+    }
+
     public static async readKeyPass (): Promise<{}|false> {
         const kpPath = await this.getKeyPassPath();
         if (kpPath !== false) {
@@ -131,10 +135,10 @@ class Config {
         else return false;
     }
 
-    public static async writeKeyPass (kp: {}): Promise<boolean> {
+    public static async writeKeyPass (kp: {}, keepBackup: boolean = false): Promise<boolean> {
         const kpPath = await this.getKeyPassPath();
         if (kpPath !== false) {
-            const saved = await FS.WriteFile(kpPath, JSON.stringify(kp));
+            const saved = await FS.WriteFile(kpPath, JSON.stringify(kp), keepBackup);
             if (!saved) this.lastSetupFailureCode = 'vault-write';
             return saved;
         }

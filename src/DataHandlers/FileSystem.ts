@@ -11,8 +11,18 @@ class ElectronFS {
         catch (e) { return CommonHelpers.StandardError(e); }
     }
 
-    public static async WriteFile(handle: string, fileContent: string): Promise<boolean> {
-        try { return await this.desktop.saveVault(handle, fileContent); }
+    public static async WriteFile(handle: string, fileContent: string, keepBackup: boolean = false): Promise<boolean> {
+        try { return await this.desktop.saveVault(handle, fileContent, keepBackup); }
+        catch (e) { return CommonHelpers.StandardError(e); }
+    }
+
+    public static async RestoreMigrationBackup(handle: string): Promise<boolean> {
+        try { return await this.desktop.restoreVaultBackup(handle); }
+        catch (e) { return CommonHelpers.StandardError(e); }
+    }
+
+    public static async DiscardMigrationBackup(handle: string): Promise<boolean> {
+        try { return await this.desktop.discardVaultBackup(handle); }
         catch (e) { return CommonHelpers.StandardError(e); }
     }
 
@@ -31,6 +41,8 @@ class ElectronFS {
 }
 
 class AndroidFS {
+    private static migrationBackupKey(uri: string): string { return 'cryptPassMigrationBackup:' + uri; }
+
     private static treeGrantKey(uri: string): string { return 'cryptPassDocumentTree:' + uri; }
 
     private static saveTreeGrant(uri: string, treeUri: string, name: string): void {
@@ -75,7 +87,7 @@ class AndroidFS {
         }
     }
 
-    public static async WriteFile (uri: string, fileContent: string): Promise<boolean> {
+    public static async WriteFile (uri: string, fileContent: string, keepBackup: boolean = false): Promise<boolean> {
         try {
             const liveUri = await this.resolveUri(uri);
             if (liveUri === false) {
@@ -84,6 +96,9 @@ class AndroidFS {
             }
             const uri_content = await this.ReadFile(uri);
             const uri_bk_content = window.localStorage.getItem(uri);//encrypted-vault recovery copy
+            if (keepBackup && uri_content !== false && window.localStorage.getItem(this.migrationBackupKey(uri)) === null) {
+                window.localStorage.setItem(this.migrationBackupKey(uri), uri_content);
+            }
             if (uri_content !== false && uri_content !== uri_bk_content)
                 window.localStorage.setItem(uri, uri_content);
             if (uri_content === false && uri_bk_content === null)
@@ -104,6 +119,20 @@ class AndroidFS {
             console.error('Android vault write bridge failed', e instanceof Error ? e.message : String(e));
             return CommonHelpers.StandardError(e);
         }
+    }
+
+    public static async RestoreMigrationBackup(uri: string): Promise<boolean> {
+        const backup = window.localStorage.getItem(this.migrationBackupKey(uri));
+        if (backup === null || !await this.WriteFile(uri, backup)) return false;
+        const restored = await this.ReadFile(uri);
+        return restored !== false && restored.replace(/\s+$/, '') === backup.replace(/\s+$/, '');
+    }
+
+    public static async DiscardMigrationBackup(uri: string): Promise<boolean> {
+        try {
+            window.localStorage.removeItem(this.migrationBackupKey(uri));
+            return window.localStorage.getItem(this.migrationBackupKey(uri)) === null;
+        } catch (_) { return false; }
     }
 
     public static async ReadFile (uri: string): Promise<string|false> {
@@ -154,14 +183,30 @@ class FS {
         }
     }
 
-    public static async WriteFile (uri: string, fileContent: string): Promise<boolean> {
+    public static async WriteFile (uri: string, fileContent: string, keepBackup: boolean = false): Promise<boolean> {
         switch(cordova.platformId) {
             case 'android':
-                return AndroidFS.WriteFile(uri, fileContent);
+                return AndroidFS.WriteFile(uri, fileContent, keepBackup);
             case 'electron':
-                return ElectronFS.WriteFile(uri, fileContent);
+                return ElectronFS.WriteFile(uri, fileContent, keepBackup);
             default:
                 return false;
+        }
+    }
+
+    public static async RestoreMigrationBackup(uri: string): Promise<boolean> {
+        switch(cordova.platformId) {
+            case 'android': return AndroidFS.RestoreMigrationBackup(uri);
+            case 'electron': return ElectronFS.RestoreMigrationBackup(uri);
+            default: return false;
+        }
+    }
+
+    public static async DiscardMigrationBackup(uri: string): Promise<boolean> {
+        switch(cordova.platformId) {
+            case 'android': return AndroidFS.DiscardMigrationBackup(uri);
+            case 'electron': return ElectronFS.DiscardMigrationBackup(uri);
+            default: return false;
         }
     }
 

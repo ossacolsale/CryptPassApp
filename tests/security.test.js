@@ -247,10 +247,31 @@ test('AutoLock timer callbacks avoid shared static-field aliases in the bundled 
     assert.doesNotMatch(emitted, /_a\.scheduleLock/);
 });
 
-test('legacy vault entry saves use the new password based migration path', () => {
+test('legacy vaults require the explicit CryptPass migration API before entries are exposed', () => {
+    const actions = source('src/AppManage/AppActions.ts');
+    assert.match(actions, /State\.CryptPass\.MigrationRequired/);
+    assert.match(actions, /State\.CryptPass\.MigrationNotice/);
+    assert.match(actions, /status: isLegacy \? 'legacy-unlock-failed' : 'wrong-password'/);
+    assert.match(actions, /cryptPass\.MigrateLegacy\(pwd\)/);
+    assert.match(actions, /new LibCryptPass\.CryptPassCached\(StandardRnW, persisted\.kp, persisted\.se\)/);
+    assert.match(actions, /FS\.RestoreMigrationBackup\(vaultUri\)/);
+    const mainView = source('src/Views/MainView.ts');
+    assert.match(mainView, /window\.confirm\(Localization\.text\('main\.legacyMigrationConfirm'\)\)/);
+    assert.match(mainView, /main\.legacyMigrationConfirm/);
     const passView = source('src/Views/PassView.ts');
     assert.match(passView, /SetEntries\(State\.EntriesManage\.Export\(\),State\.Password\)/);
     assert.doesNotMatch(passView, /SetEntries\([^\n]*State\.K,true/);
+});
+
+test('legacy migration writer retains a rollback copy and reopens from persisted storage', () => {
+    const appFiles = source('src/DataHandlers/FileSystem.ts') + source('src/Configuration/Config.ts');
+    assert.match(source('src/Configuration/StdReadersAndWriters.ts'), /KeyPassWriter: \(kp, keepBackup\) => Config\.writeKeyPass\(kp, keepBackup\)/);
+    assert.match(appFiles, /FS\.WriteFile\(kpPath, JSON\.stringify\(kp\), keepBackup\)/);
+    assert.match(appFiles, /cryptPassMigrationBackup:/);
+    const setup = source('setup-electron.js');
+    assert.match(setup, /copyFile\(filePath, cryptPassMigrationBackupPath\(filePath\), fs\.constants\.COPYFILE_EXCL\)/);
+    assert.match(setup, /cryptpass:restoreVaultBackup/);
+    assert.match(setup, /cryptpass:discardVaultBackup/);
 });
 
 

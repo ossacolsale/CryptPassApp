@@ -47,8 +47,16 @@ declare class DeviceAuth {
     static confirm(): Promise<boolean>;
     static showKeyboard(): void;
 }
+type UnlockResult = {
+    status: 'unlocked' | 'wrong-password' | 'legacy-unlock-failed';
+} | {
+    status: 'migration-required';
+    notice?: string;
+};
 declare class AppActions {
-    Unlock(pwd: string): Promise<boolean>;
+    Unlock(pwd: string): Promise<UnlockResult>;
+    CancelLegacyMigration(): void;
+    MigrateLegacy(pwd: string): Promise<boolean>;
     private unlockDiagnostic;
 }
 interface config {
@@ -83,8 +91,9 @@ declare class Config {
     protected static readSequence(): Promise<{}>;
     static writeSequence(seq: {}): Promise<boolean>;
     protected static getKeyPassPath(): Promise<string | false>;
+    static getActiveKeyPassUri(): Promise<string | false>;
     static readKeyPass(): Promise<{} | false>;
-    static writeKeyPass(kp: {}): Promise<boolean>;
+    static writeKeyPass(kp: {}, keepBackup?: boolean): Promise<boolean>;
     static newKeyPass(kp?: {}): Promise<boolean>;
     static selectKeyPassFiles(): Promise<Array<{
         uri: string;
@@ -243,23 +252,30 @@ declare const defaultMimeType: string;
 declare class ElectronFS {
     protected static get desktop(): CryptPassDesktopAPI;
     static NewFile(fileName: string, fileContent: string): Promise<string | false>;
-    static WriteFile(handle: string, fileContent: string): Promise<boolean>;
+    static WriteFile(handle: string, fileContent: string, keepBackup?: boolean): Promise<boolean>;
+    static RestoreMigrationBackup(handle: string): Promise<boolean>;
+    static DiscardMigrationBackup(handle: string): Promise<boolean>;
     static ReadFile(handle: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
 declare class AndroidFS {
+    private static migrationBackupKey;
     private static treeGrantKey;
     private static saveTreeGrant;
     private static selectVaultFolder;
     private static resolveUri;
     static NewFile(defaultFileName: string, fileContent: string): Promise<string | false>;
-    static WriteFile(uri: string, fileContent: string): Promise<boolean>;
+    static WriteFile(uri: string, fileContent: string, keepBackup?: boolean): Promise<boolean>;
+    static RestoreMigrationBackup(uri: string): Promise<boolean>;
+    static DiscardMigrationBackup(uri: string): Promise<boolean>;
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;
 }
 declare class FS {
     static NewFile(fileName: string, fileContent: string): Promise<string | false>;
-    static WriteFile(uri: string, fileContent: string): Promise<boolean>;
+    static WriteFile(uri: string, fileContent: string, keepBackup?: boolean): Promise<boolean>;
+    static RestoreMigrationBackup(uri: string): Promise<boolean>;
+    static DiscardMigrationBackup(uri: string): Promise<boolean>;
     static ReadFileBackup(uri: string): string | null;
     static ReadFile(uri: string): Promise<string | false>;
     static SelectAndReadFile(): Promise<Array<FileChooserResult> | false>;

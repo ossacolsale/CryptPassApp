@@ -1,6 +1,8 @@
+type UnlockResult = { status: 'unlocked' | 'wrong-password' | 'legacy-unlock-failed' } | { status: 'migration-required'; notice?: string };
+
 class AppActions {
 
-    public async Unlock (pwd: string): Promise<boolean> {
+    public async Unlock (pwd: string): Promise<UnlockResult> {
         let data: { kp: {}; se: {} };
         try {
             data = await Config.readData();
@@ -19,6 +21,12 @@ class AppActions {
             throw new Error(this.unlockDiagnostic('derive-key', data.kp, data.se, error));
         }
         if (k) {
+            if (State.CryptPass.MigrationRequired) {
+                State.K = '';
+                State.Password = '';
+                State.EntriesManage = null;
+                return { status: 'migration-required', notice: State.CryptPass.MigrationNotice };
+            }
             State.K = k;
             try {
                 State.EntriesManage = State.CryptPass.GetEntriesManage(State.K,true);
@@ -31,11 +39,64 @@ class AppActions {
                 State.Password = '';
                 throw new Error(diagnostic);
             }
+            try {
+                const vaultUri = await Config.getActiveKeyPassUri();
+                if (vaultUri !== false) await FS.DiscardMigrationBackup(vaultUri);
+            } catch (_) { /* A stale migration backup is safe to retain after authenticated reopen. */ }
             State.Password = pwd;
             AutoLock.start();
-            return true;
+            return { status: 'unlocked' };
         } else {
+            const key = data.kp && typeof data.kp === 'object'
+                ? (data.kp as { Key?: { FormatVersion?: unknown } }).Key : undefined;
+            const isLegacy = key?.FormatVersion === undefined || key.FormatVersion === 1;
+            State.CryptPass = null;
+            State.EntriesManage = null;
+            State.K = '';
             State.Password = '';
+            return { status: isLegacy ? 'legacy-unlock-failed' : 'wrong-password' };
+        }
+    }
+
+    public CancelLegacyMigration(): void {
+        State.CryptPass = null;
+        State.EntriesManage = null;
+        State.K = '';
+        State.Password = '';
+    }
+
+    public async MigrateLegacy(pwd: string): Promise<boolean> {
+        const cryptPass = State.CryptPass;
+        if (!cryptPass.MigrationRequired) return false;
+        let vaultUri: string|false = false;
+        try {
+            vaultUri = await Config.getActiveKeyPassUri();
+            if (vaultUri === false) throw new Error('Vault reference unavailable');
+            if (!await cryptPass.MigrateLegacy(pwd)) throw new Error('Library migration failed');
+
+            // Reopen from storage and authenticate both the master key and entries before
+            // discarding the original-vault backup retained by the writer.
+            const persisted = await Config.readData();
+            const reopened = new LibCryptPass.CryptPassCached(StandardRnW, persisted.kp, persisted.se);
+            const key = reopened.GetK(pwd);
+            if (!key || reopened.MigrationRequired) throw new Error('Migrated vault could not be reopened');
+            const entries = reopened.GetEntriesManage(key, true);
+
+            State.CryptPass = reopened;
+            State.K = key;
+            State.EntriesManage = entries;
+            State.Password = pwd;
+            await FS.DiscardMigrationBackup(vaultUri);
+            AutoLock.start();
+            return true;
+        } catch (error) {
+            console.error('Legacy vault migration failed');
+            if (vaultUri !== false) {
+                try {
+                    if (await FS.RestoreMigrationBackup(vaultUri)) await FS.DiscardMigrationBackup(vaultUri);
+                } catch (_) { /* Keep any recoverable backup and leave the vault locked. */ }
+            }
+            this.CancelLegacyMigration();
             return false;
         }
     }

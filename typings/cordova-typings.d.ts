@@ -6,7 +6,9 @@ interface CryptPassDesktopAPI {
     openVault(): Promise<{ handle: string; name: string; content: string } | false>;
     createVault(name: string, content: string): Promise<string | false>;
     readVault(handle: string): Promise<string | false>;
-    saveVault(handle: string, content: string): Promise<boolean>;
+    saveVault(handle: string, content: string, keepBackup?: boolean): Promise<boolean>;
+    restoreVaultBackup(handle: string): Promise<boolean>;
+    discardVaultBackup(handle: string): Promise<boolean>;
     secureStorageStatus(): Promise<{ ready: boolean; available: boolean; backend: string }>;
     secureGet(key: string): Promise<string | false>;
     secureSet(key: string, value: string): Promise<string | false>;
@@ -44,6 +46,9 @@ declare class ConfigCryptPass {
     initSeqAndKey(password: string): Promise<boolean>;
     refreshSequence(password: string): Promise<boolean>;
     checkPwd(password: string): boolean;
+    readonly migrationRequired: boolean;
+    readonly migrationNotice?: string;
+    migrateLegacy(password: string): Promise<boolean>;
     chPwd(oldPassword: string, newPassword: string): Promise<boolean>;
     constructor(ObjRW: StdWriters, KeyPassObj?: {}, SequenceObj?: {});
 }
@@ -67,6 +72,9 @@ declare class CryptPass {
 
 declare class CryptPassCached {
     private _KPM;
+    readonly MigrationRequired: boolean;
+    readonly MigrationNotice?: string;
+    MigrateLegacy(password: string): Promise<boolean>;
     constructor(ObjRW: StdWriters, KeyPassObj?: {}, SequenceObj?: {});
     getPassDescription(): string;
     setPassDescription(description: string): Promise<boolean>;

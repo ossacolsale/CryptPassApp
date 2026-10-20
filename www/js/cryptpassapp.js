@@ -232,7 +232,22 @@ class AutoLock {
             if (!authenticated)
                 return false;
             this.deviceUnlockPassword = undefined;
-            if (!(yield new AppActions().Unlock(password)))
+            const actions = new AppActions();
+            const unlock = yield actions.Unlock(password);
+            if (unlock.status === 'migration-required') {
+                if (!unlock.notice) {
+                    actions.CancelLegacyMigration();
+                    window.alert(Localization.text('main.legacyMigrationUnavailable'));
+                    return false;
+                }
+                if (!window.confirm(Localization.text('main.legacyMigrationConfirm'))) {
+                    actions.CancelLegacyMigration();
+                    return false;
+                }
+                if (!(yield actions.MigrateLegacy(password)))
+                    return false;
+            }
+            else if (unlock.status !== 'unlocked')
                 return false;
             if (!ScenarioController.restoreLockedScenario())
                 ScenarioController.changeScenario(new PassView());
@@ -285,6 +300,12 @@ class AppActions {
                 throw new Error(this.unlockDiagnostic('derive-key', data.kp, data.se, error));
             }
             if (k) {
+                if (State.CryptPass.MigrationRequired) {
+                    State.K = '';
+                    State.Password = '';
+                    State.EntriesManage = null;
+                    return { status: 'migration-required', notice: State.CryptPass.MigrationNotice };
+                }
                 State.K = k;
                 try {
                     State.EntriesManage = State.CryptPass.GetEntriesManage(State.K, true);
@@ -298,12 +319,70 @@ class AppActions {
                     State.Password = '';
                     throw new Error(diagnostic);
                 }
+                try {
+                    const vaultUri = yield Config.getActiveKeyPassUri();
+                    if (vaultUri !== false)
+                        yield FS.DiscardMigrationBackup(vaultUri);
+                }
+                catch (_) { }
                 State.Password = pwd;
+                AutoLock.start();
+                return { status: 'unlocked' };
+            }
+            else {
+                const key = data.kp && typeof data.kp === 'object'
+                    ? data.kp.Key : undefined;
+                const isLegacy = (key === null || key === void 0 ? void 0 : key.FormatVersion) === undefined || key.FormatVersion === 1;
+                State.CryptPass = null;
+                State.EntriesManage = null;
+                State.K = '';
+                State.Password = '';
+                return { status: isLegacy ? 'legacy-unlock-failed' : 'wrong-password' };
+            }
+        });
+    }
+    CancelLegacyMigration() {
+        State.CryptPass = null;
+        State.EntriesManage = null;
+        State.K = '';
+        State.Password = '';
+    }
+    MigrateLegacy(pwd) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const cryptPass = State.CryptPass;
+            if (!cryptPass.MigrationRequired)
+                return false;
+            let vaultUri = false;
+            try {
+                vaultUri = yield Config.getActiveKeyPassUri();
+                if (vaultUri === false)
+                    throw new Error('Vault reference unavailable');
+                if (!(yield cryptPass.MigrateLegacy(pwd)))
+                    throw new Error('Library migration failed');
+                const persisted = yield Config.readData();
+                const reopened = new LibCryptPass.CryptPassCached(StandardRnW, persisted.kp, persisted.se);
+                const key = reopened.GetK(pwd);
+                if (!key || reopened.MigrationRequired)
+                    throw new Error('Migrated vault could not be reopened');
+                const entries = reopened.GetEntriesManage(key, true);
+                State.CryptPass = reopened;
+                State.K = key;
+                State.EntriesManage = entries;
+                State.Password = pwd;
+                yield FS.DiscardMigrationBackup(vaultUri);
                 AutoLock.start();
                 return true;
             }
-            else {
-                State.Password = '';
+            catch (error) {
+                console.error('Legacy vault migration failed');
+                if (vaultUri !== false) {
+                    try {
+                        if (yield FS.RestoreMigrationBackup(vaultUri))
+                            yield FS.DiscardMigrationBackup(vaultUri);
+                    }
+                    catch (_) { }
+                }
+                this.CancelLegacyMigration();
                 return false;
             }
         });
@@ -469,6 +548,11 @@ class Config {
                 return false;
         });
     }
+    static getActiveKeyPassUri() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.getKeyPassPath();
+        });
+    }
     static readKeyPass() {
         return __awaiter(this, void 0, void 0, function* () {
             const kpPath = yield this.getKeyPassPath();
@@ -480,11 +564,11 @@ class Config {
                 return false;
         });
     }
-    static writeKeyPass(kp) {
-        return __awaiter(this, void 0, void 0, function* () {
+    static writeKeyPass(kp_1) {
+        return __awaiter(this, arguments, void 0, function* (kp, keepBackup = false) {
             const kpPath = yield this.getKeyPassPath();
             if (kpPath !== false) {
-                const saved = yield FS.WriteFile(kpPath, JSON.stringify(kp));
+                const saved = yield FS.WriteFile(kpPath, JSON.stringify(kp), keepBackup);
                 if (!saved)
                     this.lastSetupFailureCode = 'vault-write';
                 return saved;
@@ -667,7 +751,7 @@ class ConfigActions {
 }
 const StandardRnW = {
     SequenceWriter: (seq) => Config.writeSequence(seq),
-    KeyPassWriter: (kp) => Config.writeKeyPass(kp)
+    KeyPassWriter: (kp, keepBackup) => Config.writeKeyPass(kp, keepBackup)
 };
 class WalletProfiles {
     static createId() {
@@ -1235,10 +1319,30 @@ class ElectronFS {
             }
         });
     }
-    static WriteFile(handle, fileContent) {
+    static WriteFile(handle_1, fileContent_1) {
+        return __awaiter(this, arguments, void 0, function* (handle, fileContent, keepBackup = false) {
+            try {
+                return yield this.desktop.saveVault(handle, fileContent, keepBackup);
+            }
+            catch (e) {
+                return CommonHelpers.StandardError(e);
+            }
+        });
+    }
+    static RestoreMigrationBackup(handle) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                return yield this.desktop.saveVault(handle, fileContent);
+                return yield this.desktop.restoreVaultBackup(handle);
+            }
+            catch (e) {
+                return CommonHelpers.StandardError(e);
+            }
+        });
+    }
+    static DiscardMigrationBackup(handle) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                return yield this.desktop.discardVaultBackup(handle);
             }
             catch (e) {
                 return CommonHelpers.StandardError(e);
@@ -1270,6 +1374,7 @@ class ElectronFS {
     }
 }
 class AndroidFS {
+    static migrationBackupKey(uri) { return 'cryptPassMigrationBackup:' + uri; }
     static treeGrantKey(uri) { return 'cryptPassDocumentTree:' + uri; }
     static saveTreeGrant(uri, treeUri, name) {
         window.localStorage.setItem(this.treeGrantKey(uri), JSON.stringify({ treeUri: treeUri, name: name }));
@@ -1321,8 +1426,8 @@ class AndroidFS {
             }
         });
     }
-    static WriteFile(uri, fileContent) {
-        return __awaiter(this, void 0, void 0, function* () {
+    static WriteFile(uri_1, fileContent_1) {
+        return __awaiter(this, arguments, void 0, function* (uri, fileContent, keepBackup = false) {
             try {
                 const liveUri = yield this.resolveUri(uri);
                 if (liveUri === false) {
@@ -1331,6 +1436,9 @@ class AndroidFS {
                 }
                 const uri_content = yield this.ReadFile(uri);
                 const uri_bk_content = window.localStorage.getItem(uri);
+                if (keepBackup && uri_content !== false && window.localStorage.getItem(this.migrationBackupKey(uri)) === null) {
+                    window.localStorage.setItem(this.migrationBackupKey(uri), uri_content);
+                }
                 if (uri_content !== false && uri_content !== uri_bk_content)
                     window.localStorage.setItem(uri, uri_content);
                 if (uri_content === false && uri_bk_content === null)
@@ -1350,6 +1458,26 @@ class AndroidFS {
             catch (e) {
                 console.error('Android vault write bridge failed', e instanceof Error ? e.message : String(e));
                 return CommonHelpers.StandardError(e);
+            }
+        });
+    }
+    static RestoreMigrationBackup(uri) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const backup = window.localStorage.getItem(this.migrationBackupKey(uri));
+            if (backup === null || !(yield this.WriteFile(uri, backup)))
+                return false;
+            const restored = yield this.ReadFile(uri);
+            return restored !== false && restored.replace(/\s+$/, '') === backup.replace(/\s+$/, '');
+        });
+    }
+    static DiscardMigrationBackup(uri) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                window.localStorage.removeItem(this.migrationBackupKey(uri));
+                return window.localStorage.getItem(this.migrationBackupKey(uri)) === null;
+            }
+            catch (_) {
+                return false;
             }
         });
     }
@@ -1401,15 +1529,33 @@ class FS {
             }
         });
     }
-    static WriteFile(uri, fileContent) {
-        return __awaiter(this, void 0, void 0, function* () {
+    static WriteFile(uri_1, fileContent_1) {
+        return __awaiter(this, arguments, void 0, function* (uri, fileContent, keepBackup = false) {
             switch (cordova.platformId) {
                 case 'android':
-                    return AndroidFS.WriteFile(uri, fileContent);
+                    return AndroidFS.WriteFile(uri, fileContent, keepBackup);
                 case 'electron':
-                    return ElectronFS.WriteFile(uri, fileContent);
+                    return ElectronFS.WriteFile(uri, fileContent, keepBackup);
                 default:
                     return false;
+            }
+        });
+    }
+    static RestoreMigrationBackup(uri) {
+        return __awaiter(this, void 0, void 0, function* () {
+            switch (cordova.platformId) {
+                case 'android': return AndroidFS.RestoreMigrationBackup(uri);
+                case 'electron': return ElectronFS.RestoreMigrationBackup(uri);
+                default: return false;
+            }
+        });
+    }
+    static DiscardMigrationBackup(uri) {
+        return __awaiter(this, void 0, void 0, function* () {
+            switch (cordova.platformId) {
+                case 'android': return AndroidFS.DiscardMigrationBackup(uri);
+                case 'electron': return ElectronFS.DiscardMigrationBackup(uri);
+                default: return false;
             }
         });
     }
@@ -2055,9 +2201,9 @@ class MainView extends View {
                     this.showWrongPassword();
                     return false;
                 }
-                let pwdCorrect;
+                let unlockResult;
                 try {
-                    pwdCorrect = yield this._aa.Unlock(pwd);
+                    unlockResult = yield this._aa.Unlock(pwd);
                 }
                 catch (error) {
                     console.error('Wallet unlock failed', error);
@@ -2073,12 +2219,34 @@ class MainView extends View {
                     this.showUnlockDiagnostic(Localization.text(isLegacy ? 'main.unlockLegacyError' : 'main.unlockError'), diagnostic);
                     return false;
                 }
-                if (pwdCorrect) {
+                if (unlockResult.status === 'migration-required') {
+                    if (!unlockResult.notice) {
+                        this._aa.CancelLegacyMigration();
+                        this.showUnlockDiagnostic(Localization.text('main.legacyMigrationUnavailable'), Localization.text('main.legacyMigrationDetails'));
+                        return false;
+                    }
+                    if (!window.confirm(Localization.text('main.legacyMigrationConfirm'))) {
+                        this._aa.CancelLegacyMigration();
+                        return false;
+                    }
+                    if (!(yield this._aa.MigrateLegacy(pwd))) {
+                        this.showUnlockDiagnostic(Localization.text('main.legacyMigrationFailed'), Localization.text('main.legacyMigrationDetails'));
+                        return false;
+                    }
+                }
+                else if (unlockResult.status === 'wrong-password') {
+                    this.showWrongPassword();
+                    return false;
+                }
+                else if (unlockResult.status === 'legacy-unlock-failed') {
+                    this.showUnlockDiagnostic(Localization.text('main.unlockLegacyError'), Localization.text('main.legacyUnlockFailureDetails'));
+                    return false;
+                }
+                if (unlockResult.status === 'unlocked' || unlockResult.status === 'migration-required') {
                     if (!ScenarioController.restoreLockedScenario())
                         yield this.Init();
                     return true;
                 }
-                this.showWrongPassword();
                 return false;
             }), (res) => { if (!res)
                 this.focusPassword(true, cordova.platformId === 'electron'); });

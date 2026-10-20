@@ -52,9 +52,19 @@ async function cryptPassPersist() {
     await fs.promises.writeFile(temp, encrypted, { mode: 0o600 });
     await fs.promises.rename(temp, cryptPassSecureFile);
 }
-async function cryptPassWriteAtomically(filePath, content) {
+function cryptPassMigrationBackupPath(filePath) {
+    return filePath + '.cryptpass-migration-backup';
+}
+async function cryptPassWriteAtomically(filePath, content, keepBackup = false) {
     const temp = filePath + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
     try {
+        if (keepBackup) {
+            try {
+                await fs.promises.copyFile(filePath, cryptPassMigrationBackupPath(filePath), fs.constants.COPYFILE_EXCL);
+            } catch (error) {
+                if (error.code !== 'EEXIST') throw error;
+            }
+        }
         await fs.promises.writeFile(temp, content, { encoding: 'utf8', mode: 0o600 });
         await fs.promises.rename(temp, filePath);
         return true;
@@ -92,11 +102,29 @@ cryptPassHandle('cryptpass:readVault', async (handle) => {
     if (!filePath) return false;
     try { return await fs.promises.readFile(filePath, 'utf8'); } catch (_) { return false; }
 });
-cryptPassHandle('cryptpass:saveVault', async (handle, content) => {
+cryptPassHandle('cryptpass:saveVault', async (handle, content, keepBackup) => {
     await cryptPassReady;
     const filePath = typeof handle === 'string' ? cryptPassVaults.get(handle) : null;
-    if (!filePath || typeof content !== 'string') return false;
-    return cryptPassWriteAtomically(filePath, content);
+    if (!filePath || typeof content !== 'string' || (keepBackup !== undefined && typeof keepBackup !== 'boolean')) return false;
+    return cryptPassWriteAtomically(filePath, content, keepBackup === true);
+});
+cryptPassHandle('cryptpass:restoreVaultBackup', async (handle) => {
+    await cryptPassReady;
+    const filePath = typeof handle === 'string' ? cryptPassVaults.get(handle) : null;
+    if (!filePath) return false;
+    try {
+        const backup = await fs.promises.readFile(cryptPassMigrationBackupPath(filePath), 'utf8');
+        return cryptPassWriteAtomically(filePath, backup);
+    } catch (_) { return false; }
+});
+cryptPassHandle('cryptpass:discardVaultBackup', async (handle) => {
+    await cryptPassReady;
+    const filePath = typeof handle === 'string' ? cryptPassVaults.get(handle) : null;
+    if (!filePath) return false;
+    try {
+        await fs.promises.unlink(cryptPassMigrationBackupPath(filePath));
+        return true;
+    } catch (error) { return error.code === 'ENOENT'; }
 });
 cryptPassHandle('cryptpass:secureStorageStatus', async () => {
     await cryptPassReady;
@@ -160,7 +188,9 @@ contextBridge.exposeInMainWorld('cryptPassDesktop', {
     openVault: () => ipcRenderer.invoke('cryptpass:openVault'),
     createVault: (name, content) => ipcRenderer.invoke('cryptpass:createVault', name, content),
     readVault: (handle) => ipcRenderer.invoke('cryptpass:readVault', handle),
-    saveVault: (handle, content) => ipcRenderer.invoke('cryptpass:saveVault', handle, content),
+    saveVault: (handle, content, keepBackup) => ipcRenderer.invoke('cryptpass:saveVault', handle, content, keepBackup),
+    restoreVaultBackup: (handle) => ipcRenderer.invoke('cryptpass:restoreVaultBackup', handle),
+    discardVaultBackup: (handle) => ipcRenderer.invoke('cryptpass:discardVaultBackup', handle),
     secureStorageStatus: () => ipcRenderer.invoke('cryptpass:secureStorageStatus'),
     secureGet: (key) => ipcRenderer.invoke('cryptpass:secureGet', key),
     secureSet: (key, value) => ipcRenderer.invoke('cryptpass:secureSet', key, value),

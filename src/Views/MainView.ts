@@ -163,9 +163,9 @@ class MainView extends View {
                     this.showWrongPassword();
                     return false;
                 }
-                let pwdCorrect: boolean;
+                let unlockResult: UnlockResult;
                 try {
-                    pwdCorrect = await this._aa.Unlock(pwd);
+                    unlockResult = await this._aa.Unlock(pwd);
                 } catch (error) {
                     console.error('Wallet unlock failed', error);
                     const diagnostic = error instanceof Error ? error.message : String(error);
@@ -179,11 +179,40 @@ class MainView extends View {
                     this.showUnlockDiagnostic(Localization.text(isLegacy ? 'main.unlockLegacyError' : 'main.unlockError'), diagnostic);
                     return false;
                 }
-                if (pwdCorrect) {
+                if (unlockResult.status === 'migration-required') {
+                    if (!unlockResult.notice) {
+                        this._aa.CancelLegacyMigration();
+                        this.showUnlockDiagnostic(
+                            Localization.text('main.legacyMigrationUnavailable'),
+                            Localization.text('main.legacyMigrationDetails')
+                        );
+                        return false;
+                    }
+                    if (!window.confirm(Localization.text('main.legacyMigrationConfirm'))) {
+                        this._aa.CancelLegacyMigration();
+                        return false;
+                    }
+                    if (!await this._aa.MigrateLegacy(pwd)) {
+                        this.showUnlockDiagnostic(
+                            Localization.text('main.legacyMigrationFailed'),
+                            Localization.text('main.legacyMigrationDetails')
+                        );
+                        return false;
+                    }
+                } else if (unlockResult.status === 'wrong-password') {
+                    this.showWrongPassword();
+                    return false;
+                } else if (unlockResult.status === 'legacy-unlock-failed') {
+                    this.showUnlockDiagnostic(
+                        Localization.text('main.unlockLegacyError'),
+                        Localization.text('main.legacyUnlockFailureDetails')
+                    );
+                    return false;
+                }
+                if (unlockResult.status === 'unlocked' || unlockResult.status === 'migration-required') {
                     if (!ScenarioController.restoreLockedScenario()) await this.Init();
                     return true;
                 }
-                this.showWrongPassword();
                 return false;
             }, (res) => { if (!res) this.focusPassword(true, cordova.platformId === 'electron'); }
         );
