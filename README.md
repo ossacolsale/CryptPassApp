@@ -6,7 +6,7 @@ CryptPass App is a Cordova password wallet for Android, Linux and Windows. Vault
 
 | Platform | Build | Runtime tested in this remediation | File handling | Secure metadata | Notes |
 |---|---|---|---|---|---|
-| Linux | Yes: `.deb` and `.zip` | No interactive launch test | Electron native open/save dialogs; opaque main-process handles | Electron `safeStorage` | `safeStorage` requires an available OS-backed encryption provider; initialization fails closed otherwise. |
+| Linux | Yes: `.deb` and `.zip` | No interactive launch test | Electron native open/save dialogs; opaque main-process handles | Electron async `safeStorage` | Initialization fails closed unless async encryption is available and a non-persisted encryption probe reports the Secret Service (`v11`) or portal (`v12`) provider. The weaker POSIX fallback (`v10`) is rejected; the async Portal provider remains supported even if the legacy backend reports `basic_text`. See the [security audit remediation record](docs/SECURITY_AUDIT_2026-10.md). |
 | Windows | Yes: NSIS installer and `.zip` | No Windows runtime test | Electron native open/save dialogs; opaque main-process handles | Electron `safeStorage` | Unsigned development builds are supported; configure certificate settings for signed releases. |
 | Android | Build could not complete here | No device/provider test | SAF document URIs and persisted URI permissions | Android secure-storage plugin | Cloud `DocumentProvider` behavior depends on the provider; SDK Platform 36 could not be installed because `/lib/android-sdk` is not writable in the build environment, and device/provider behavior still needs testing. |
 

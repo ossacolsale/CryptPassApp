@@ -13,12 +13,23 @@ const crypto = require('crypto');
 const cryptPassVaults = new Map();
 let cryptPassSecureFile;
 let cryptPassSecureValues = { values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} };
-let cryptPassReady = app.whenReady().then(() => {
+let cryptPassReady = app.whenReady().then(async () => {
     cryptPassSecureFile = path.join(app.getPath('userData'), 'cryptpass-secure.bin');
+    if (!await cryptPassHasStrongStorage()) throw new Error('Secure storage unavailable');
     if (!fs.existsSync(cryptPassSecureFile)) return;
-    if (!cryptPassHasStrongStorage()) throw new Error('Secure storage unavailable');
     const encrypted = fs.readFileSync(cryptPassSecureFile);
-    const restored = JSON.parse(safeStorage.decryptString(encrypted));
+    let decrypted = await safeStorage.decryptStringAsync(encrypted);
+    if (!decrypted || typeof decrypted.result !== 'string' || typeof decrypted.shouldReEncrypt !== 'boolean') {
+        throw new Error('Secure storage decryption result is invalid');
+    }
+    const shouldReEncrypt = decrypted.shouldReEncrypt;
+    if (shouldReEncrypt) {
+        decrypted = await safeStorage.decryptStringAsync(encrypted);
+        if (!decrypted || typeof decrypted.result !== 'string' || typeof decrypted.shouldReEncrypt !== 'boolean' || decrypted.shouldReEncrypt) {
+            throw new Error('Secure storage key rotation did not complete');
+        }
+    }
+    const restored = JSON.parse(decrypted.result);
     if (!restored || typeof restored !== 'object' || !restored.values || typeof restored.values !== 'object' ||
         !restored.vaults || typeof restored.vaults !== 'object' ||
         Object.values(restored.vaults).some(filePath => typeof filePath !== 'string')) {
@@ -26,10 +37,20 @@ let cryptPassReady = app.whenReady().then(() => {
     }
     cryptPassSecureValues = restored;
     for (const [id, filePath] of Object.entries(cryptPassSecureValues.vaults)) cryptPassVaults.set(id, filePath);
+    if (shouldReEncrypt) await cryptPassWriteSecureValues();
 });
 
-function cryptPassHasStrongStorage() {
-    return safeStorage.isEncryptionAvailable() && safeStorage.getSelectedStorageBackend() !== 'basic_text';
+async function cryptPassHasStrongStorage() {
+    if (!await safeStorage.isAsyncEncryptionAvailable()) return false;
+    if (process.platform === 'linux') {
+        // Chromium's async POSIX fallback uses the weak legacy v10 key. Probe
+        // the actual encryptor so neither a legacy backend name nor fallback
+        // selection can be mistaken for an OS-backed async provider.
+        const probe = await safeStorage.encryptStringAsync('CryptPass secure storage provider check');
+        const providerTag = probe.subarray(0, 3).toString('ascii');
+        if (!['v11', 'v12'].includes(providerTag)) return false;
+    }
+    return true;
 }
 function cryptPassAssertSender(event) {
     const frame = event.senderFrame;
@@ -45,12 +66,20 @@ function cryptPassHandle(channel, handler) {
 }
 async function cryptPassPersist() {
     await cryptPassReady;
-    if (!cryptPassHasStrongStorage()) throw new Error('Secure storage unavailable');
+    return cryptPassWriteSecureValues();
+}
+async function cryptPassWriteSecureValues() {
+    if (!await cryptPassHasStrongStorage()) throw new Error('Secure storage unavailable');
     cryptPassSecureValues.vaults = Object.fromEntries(cryptPassVaults);
-    const encrypted = safeStorage.encryptString(JSON.stringify(cryptPassSecureValues));
+    const encrypted = await safeStorage.encryptStringAsync(JSON.stringify(cryptPassSecureValues));
     const temp = cryptPassSecureFile + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
-    await fs.promises.writeFile(temp, encrypted, { mode: 0o600 });
-    await fs.promises.rename(temp, cryptPassSecureFile);
+    try {
+        await fs.promises.writeFile(temp, encrypted, { mode: 0o600 });
+        await fs.promises.rename(temp, cryptPassSecureFile);
+    } catch (error) {
+        try { await fs.promises.unlink(temp); } catch (_) {}
+        throw error;
+    }
 }
 function cryptPassMigrationBackupPath(filePath) {
     return filePath + '.cryptpass-migration-backup';
@@ -130,7 +159,7 @@ cryptPassHandle('cryptpass:secureStorageStatus', async () => {
     await cryptPassReady;
     return {
         ready: true,
-        available: safeStorage.isEncryptionAvailable(),
+        available: await cryptPassHasStrongStorage(),
         backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform
     };
 });
@@ -210,9 +239,18 @@ try {
     const packagePath = path.join(__dirname, 'platforms/electron/www/package.json');
     const cordovaConfig = JSON.parse(fs.readFileSync(packagePath, 'utf8')).cordova || {};
     const sandboxOverride = '    browserWindowOpts.webPreferences.sandbox = false;\n';
+    const contextIsolationSetting = '    browserWindowOpts.webPreferences.contextIsolation = true;\n';
     const preloadPackageImport = "const { cordova } = require('./package.json');";
     if (main.includes(sandboxOverride)) main = main.replace(sandboxOverride, '');
-    else if (!main.includes('browserWindowOpts.webPreferences.contextIsolation = true;')) throw new Error('Cannot locate Cordova Electron BrowserWindow configuration');
+    if (!main.includes(contextIsolationSetting)) throw new Error('Cannot locate Cordova Electron BrowserWindow configuration');
+    if (!main.includes('browserWindowOpts.webPreferences.sandbox = true;')) {
+        main = main.replace(contextIsolationSetting, contextIsolationSetting + [
+            '    browserWindowOpts.webPreferences.nodeIntegration = false;',
+            '    browserWindowOpts.webPreferences.sandbox = true;',
+            '    browserWindowOpts.webPreferences.webSecurity = true;',
+            ''
+        ].join('\n'));
+    }
     if (preload.includes(preloadPackageImport)) preload = preload.replace(preloadPackageImport, `const cordova = ${JSON.stringify(cordovaConfig)};`);
     else if (!preload.includes('const cordova = ')) throw new Error('Cannot locate Cordova Electron preload package import');
     main = main.replace(/\nipcMain\.handle\('fsread'[\s\S]*?require\('electron'\)\.Menu\.setApplicationMenu\(null\);\s*/, '\n');

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const test = require('node:test');
 const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
@@ -9,6 +10,33 @@ const { ConfigCryptPass } = require('cryptpass/dist/crypt');
 
 const root = path.join(__dirname, '..');
 const source = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+
+function loadElectronSecureRuntime({ platform = 'linux', backend = 'gnome_libsecret', available = true, encryptedFile, decrypt, encrypt } = {}) {
+    const setup = source('setup-electron.js');
+    const start = setup.indexOf('let cryptPassSecureValues =');
+    const end = setup.indexOf('function cryptPassMigrationBackupPath');
+    assert.ok(start >= 0 && end > start, 'secure-storage runtime block is present');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cryptpass-secure-test-'));
+    const filePath = path.join(directory, 'cryptpass-secure.bin');
+    if (encryptedFile) fs.writeFileSync(filePath, encryptedFile);
+    const cryptPassVaults = new Map();
+    const safeStorage = {
+        isAsyncEncryptionAvailable: async () => typeof available === 'function' ? available() : available,
+        getSelectedStorageBackend: () => backend,
+        decryptStringAsync: decrypt || (async () => ({
+            result: JSON.stringify({ values: { cryptPassCfg: null, cryptPassWalletProfiles: null }, vaults: {} }),
+            shouldReEncrypt: false
+        })),
+        encryptStringAsync: encrypt || (async value => Buffer.from(`v11:${value}`))
+    };
+    const context = {
+        app: { whenReady: () => Promise.resolve(), getPath: () => directory },
+        path, fs, safeStorage, process: { platform }, crypto: require('node:crypto'), cryptPassVaults
+    };
+    const runtime = setup.slice(start, end) + `\nglobalThis.__runtime = { ready: () => cryptPassReady, values: () => cryptPassSecureValues, persist: () => cryptPassPersist() };`;
+    vm.runInNewContext(runtime, context);
+    return { runtime: context.__runtime, directory, filePath, safeStorage, cryptPassVaults, cleanup: () => fs.rmSync(directory, { recursive: true, force: true }) };
+}
 
 function loadViewHelpers() {
     const input = source('src/Helpers/ViewHelpers.ts');
@@ -59,7 +87,7 @@ test('Electron renderer has no arbitrary filesystem IPC and main validates IPC s
     assert.match(setup, /dialog\.showOpenDialog/);
     assert.match(setup, /dialog\.showSaveDialog/);
     assert.match(setup, /cryptPassVaults\.get\(handle\)/);
-    assert.match(setup, /safeStorage\.encryptString/);
+    assert.match(setup, /safeStorage\.encryptStringAsync/);
 });
 
 test('Electron sandbox is enabled while the Cordova preload stays within sandbox APIs', () => {
@@ -73,6 +101,9 @@ test('Electron sandbox is enabled while the Cordova preload stays within sandbox
     assert.match(setup, /const preloadPackageImport = "const \{ cordova \} = require\('\.\/package\.json'\);"/);
     assert.match(setup, /preload = preload\.replace\(preloadPackageImport, `const cordova = \$\{JSON\.stringify\(cordovaConfig\)\};`\)/);
     assert.match(setup, /main = main\.replace\(sandboxOverride, ''\)/);
+    for (const setting of ['nodeIntegration = false', 'contextIsolation = true', 'sandbox = true', 'webSecurity = true']) {
+        assert.ok(setup.includes(`browserWindowOpts.webPreferences.${setting};`), `missing generated Electron setting ${setting}`);
+    }
     assert.match(patch, /require\('\.\.\/setup-electron\.js'\)/);
 });
 
@@ -92,9 +123,128 @@ test('Electron bridge covers vault lifecycle, secure storage, locking, and navig
 test('Electron secure storage only accepts named app configuration and profile keys', () => {
     const setup = source('setup-electron.js');
     assert.match(setup, /\['cryptPassCfg', 'cryptPassWalletProfiles'\]\.includes\(key\)/);
-    assert.match(setup, /safeStorage\.isEncryptionAvailable\(\)/);
+    assert.match(setup, /safeStorage\.isAsyncEncryptionAvailable\(\)/);
     assert.match(source('src/DataHandlers/SecureStorage.ts'), /secureGet\(key\)/);
     assert.match(source('src/DataHandlers/SecureStorage.ts'), /secureSet\(key, value\)/);
+});
+
+test('Electron secure startup waits for the asynchronous OS-backed storage check', async () => {
+    let releaseAvailability;
+    const state = loadElectronSecureRuntime({ available: () => new Promise(resolve => { releaseAvailability = resolve; }) });
+    try {
+        let ready = false;
+        state.runtime.ready().then(() => { ready = true; });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(ready, false);
+        releaseAvailability(true);
+        await state.runtime.ready();
+        assert.equal(ready, true);
+    } finally { state.cleanup(); }
+});
+
+test('Electron secure startup rejects unavailable or weaker Linux storage providers', async () => {
+    for (const options of [
+        { platform: 'linux', backend: 'basic_text', available: true, encrypt: async () => Buffer.from('v10:weak-fallback') },
+        { platform: 'linux', backend: 'unknown', available: true, encrypt: async () => Buffer.from('v10:weak-fallback') },
+        { platform: 'linux', backend: 'gnome_libsecret', available: true, encrypt: async () => Buffer.from('v10:weak-fallback') },
+        { platform: 'linux', backend: 'gnome_libsecret', available: false },
+        { platform: 'win32', available: false },
+        { platform: 'darwin', available: false }
+    ]) {
+        const state = loadElectronSecureRuntime(options);
+        try { await assert.rejects(state.runtime.ready(), /Secure storage unavailable/); }
+        finally { state.cleanup(); }
+    }
+});
+
+test('Electron Linux accepts the async Secret Portal provider even when the legacy backend is basic_text', async () => {
+    const state = loadElectronSecureRuntime({
+        platform: 'linux', backend: 'basic_text', available: true,
+        encrypt: async value => Buffer.from(`v12:${value}`)
+    });
+    try { await state.runtime.ready(); }
+    finally { state.cleanup(); }
+});
+
+test('Electron secure startup rejects corrupt persisted data and async decryption errors', async () => {
+    const invalidData = loadElectronSecureRuntime({
+        encryptedFile: Buffer.from('legacy encrypted blob'),
+        decrypt: async encrypted => {
+            assert.ok(Buffer.isBuffer(encrypted));
+            return { result: '{broken', shouldReEncrypt: false };
+        }
+    });
+    try { await assert.rejects(invalidData.runtime.ready()); }
+    finally { invalidData.cleanup(); }
+
+    const failedDecrypt = loadElectronSecureRuntime({
+        encryptedFile: Buffer.from('legacy encrypted blob'),
+        decrypt: async () => { throw new Error('temporarily unavailable'); }
+    });
+    try { await assert.rejects(failedDecrypt.runtime.ready(), /temporarily unavailable/); }
+    finally { failedDecrypt.cleanup(); }
+});
+
+test('Electron secure startup retries key rotation and atomically persists async re-encryption', async () => {
+    const restored = { values: { cryptPassCfg: 'cfg', cryptPassWalletProfiles: 'profiles' }, vaults: { wallet: '/vault' } };
+    let decryptCalls = 0;
+    let encryptCalls = 0;
+    let releaseReencrypt;
+    const state = loadElectronSecureRuntime({
+        encryptedFile: Buffer.from('old synchronous ciphertext'),
+        decrypt: async encrypted => {
+            assert.ok(Buffer.isBuffer(encrypted));
+            decryptCalls++;
+            return { result: JSON.stringify(restored), shouldReEncrypt: decryptCalls === 1 };
+        },
+        encrypt: async value => {
+            encryptCalls++;
+            if (encryptCalls < 3) return Buffer.from('v11:provider-check');
+            return new Promise(resolve => { releaseReencrypt = () => resolve(Buffer.from(`v11:async:${value}`)); });
+        }
+    });
+    try {
+        let ready = false;
+        const readyPromise = state.runtime.ready().then(() => { ready = true; });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(ready, false);
+        releaseReencrypt();
+        await readyPromise;
+        assert.equal(ready, true);
+        assert.equal(decryptCalls, 2);
+        assert.equal(encryptCalls, 3);
+        assert.equal(state.runtime.values().values.cryptPassCfg, 'cfg');
+        assert.equal(state.cryptPassVaults.get('wallet'), '/vault');
+        assert.match(fs.readFileSync(state.filePath, 'utf8'), /^v11:async:/);
+        assert.equal(fs.readdirSync(state.directory).filter(name => name.endsWith('.tmp')).length, 0);
+    } finally { state.cleanup(); }
+});
+
+test('Electron secure persistence rejects async encryption failures without replacing the file', async () => {
+    let encryptCalls = 0;
+    const state = loadElectronSecureRuntime({
+        encryptedFile: Buffer.from('existing ciphertext'),
+        encrypt: async () => {
+            encryptCalls++;
+            if (encryptCalls === 1) return Buffer.from('v11:provider-check');
+            throw new Error('encryption failed');
+        }
+    });
+    try {
+        await state.runtime.ready();
+        await assert.rejects(state.runtime.persist(), /encryption failed/);
+        assert.equal(fs.readFileSync(state.filePath, 'utf8'), 'existing ciphertext');
+        assert.equal(fs.readdirSync(state.directory).filter(name => name.endsWith('.tmp')).length, 0);
+    } finally { state.cleanup(); }
+});
+
+test('Electron does not migrate stale renderer values until secure storage readiness and lookup succeed', () => {
+    const secureStorage = source('src/DataHandlers/SecureStorage.ts');
+    const electronGet = secureStorage.slice(secureStorage.indexOf("case 'electron':"), secureStorage.indexOf("case 'android':"));
+    assert.ok(electronGet.indexOf('secureStorageStatus()') < electronGet.indexOf("if (!status || status.ready !== true) throw"));
+    assert.ok(electronGet.indexOf("if (!status || status.ready !== true) throw") < electronGet.indexOf('secureGet(key)'));
+    assert.ok(electronGet.indexOf('secureGet(key)') < electronGet.indexOf('window.localStorage.getItem(key)'));
+    assert.match(electronGet, /if \(saved === false \|\| saved === undefined\) return false;/);
 });
 
 test('Android storage is provided by the repository-local SAF plugin', () => {

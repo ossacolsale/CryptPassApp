@@ -1,7 +1,7 @@
 {
   "name": "com.cryptpass.app",
   "displayName": "CryptPass",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "A sample Apache Cordova application that responds to the deviceready event.",
   "main": "index.js",
   "scripts": {
@@ -30,7 +30,7 @@
     "cordova-electron": "4.0.0",
     "cordova-plugin-cryptpass-secure-storage": "file:local-plugins/cordova-plugin-cryptpass-secure-storage",
     "cordova-plugin-cryptpass-storage": "file:local-plugins/cordova-plugin-cryptpass-storage",
-    "electron": "44.9.0",
+    "electron": "44.9.3",
     "esbuild": "^0.28.2",
     "events": "^3.3.0",
     "jsdom": "29.1.1",
@@ -55,7 +55,7 @@
     "cryptpass": "0.2.0"
   },
   "overrides": {
-    "electron": "44.9.0",
+    "electron": "44.9.3",
     "electron-builder": "26.15.3",
     "tar": "7.5.22"
   }
