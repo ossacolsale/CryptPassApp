@@ -6,12 +6,20 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'src/Configuration/WalletProfiles.ts'), 'utf8');
-function createProfiles(initial = {}) {
+function createProfiles(initial = {}, { failConfigWrite = false, failDelete = false } = {}) {
     const values = new Map(Object.entries(initial));
     const secureStorage = {
         async getVal(key) { return values.has(key) ? values.get(key) : false; },
-        async setVal(key, value) { values.set(key, value); return key; },
-        async delVal(key) { values.delete(key); return key; }
+        async setVal(key, value) {
+            if (failConfigWrite && key === 'cryptPassCfg') return false;
+            values.set(key, value);
+            return key;
+        },
+        async delVal(key) {
+            if (failDelete) return false;
+            values.delete(key);
+            return key;
+        }
     };
     let byteCounter = 0;
     const context = {
@@ -59,4 +67,11 @@ test('new installs create one profile and reject empty or overlong profile names
     assert.equal(await profiles.add('  '), false);
     assert.equal(await profiles.rename((await profiles.list())[0].id, 'x'.repeat(81)), false);
     assert.equal((await profiles.list()).length, 1);
+});
+
+test('failed first-run migration surfaces rollback failure and leaves the partial key visible for recovery', async () => {
+    const { profiles, values } = createProfiles({}, { failConfigWrite: true, failDelete: true });
+    await assert.rejects(profiles.initialize(), /rollback could not be verified/);
+    assert.ok(values.has('cryptPassWalletProfiles'));
+    assert.equal(values.has('cryptPassCfg'), false);
 });

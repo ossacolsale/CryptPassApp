@@ -165,10 +165,16 @@ On Android there does not exist an equivalent of the iOS KeyChain. The `SecureSt
 
 - A random 256-bit AES key is generated.
 - The AES key encrypts the value.
-- The AES key is encrypted with a device-generated RSA (RSA/ECB/PKCS1Padding) from the Android KeyStore.
+- New records wrap the AES key with a versioned Android Keystore RSA key using RSA-OAEP with SHA-256 and an explicit MGF1 SHA-1 parameter.
 - The combination of the encrypted AES key and value are stored in `SharedPreferences`.
 
-The inverse process is followed on `get`.
+Records without a wrapping-version marker are legacy records encrypted with RSAES-PKCS1-v1_5. On a successful AES-GCM authenticated read, the plugin stages a newly encrypted OAEP record, reads it back and verifies it, then atomically replaces the old record. Staging is retained until the committed record has also been read back and verified, allowing interrupted migrations to resume. The legacy Keystore alias is retained and legacy PKCS#1 v1.5 is used for decryption only during the compatibility period; it is never used for new records.
+
+The legacy wrapping design is weaker than OAEP. The audit that motivated this migration did not establish a reachable adaptive decryption or padding oracle in this application. Decryption failures use a generic callback and log message to avoid exposing padding or authentication distinctions.
+
+OAEP key generation and operations fail closed when the Android Keystore provider cannot support the selected parameters or existing user-authentication requirements. Android API 24 is the minimum supported level; validate the selected parameters on API 24 and current Android releases, including hardware-backed providers.
+
+The AES-GCM ciphertext and associated-data format are unchanged.
 
 Native AES is used.
 Minimum android supported version is 5.0 Lollipop. If you need to support earlier Android versions use version 2.6.8.

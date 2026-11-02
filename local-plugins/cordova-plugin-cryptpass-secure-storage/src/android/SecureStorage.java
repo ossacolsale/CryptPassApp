@@ -29,6 +29,8 @@ public class SecureStorage extends CordovaPlugin {
     private static final String MSG_NOT_SUPPORTED = "API 19 (Android 4.4 KitKat) is required. This device is running API " + Build.VERSION.SDK_INT;
     private static final String MSG_DEVICE_NOT_SECURE = "Device is not secure";
     private static final String MSG_KEYS_FAILED = "Generate RSA Encryption Keys failed. ";
+    private static final int WRAP_VERSION_OAEP = 1;
+    private static final String WRAP_ALG_OAEP = "RSA-OAEP-SHA256-MGF1-SHA1";
 
     private Hashtable<String, SharedPreferencesHandler> SERVICE_STORAGE = new Hashtable<String, SharedPreferencesHandler>();
     private String INIT_SERVICE;
@@ -56,10 +58,12 @@ public class SecureStorage extends CordovaPlugin {
                     public void run() {
                         if (unlockCredentialsContext != null) {
                             String alias = service2alias(INIT_SERVICE);
-                            if (rsa.userAuthenticationRequired(alias)) {
+                            String oaepAlias = service2oaepAlias(INIT_SERVICE);
+                            if (rsa.userAuthenticationRequired(alias) || rsa.userAuthenticationRequiredOaep(oaepAlias)) {
                                 unlockCredentialsContext.error("User not authenticated");
+                            } else {
+                                unlockCredentialsContext.success();
                             }
-                            unlockCredentialsContext.success();
                             unlockCredentialsContext = null;
                         }
                     }
@@ -96,19 +100,20 @@ public class SecureStorage extends CordovaPlugin {
 
             INIT_PACKAGENAME = ctx.getPackageName();
             String alias = service2alias(service);
+            String oaepAlias = service2oaepAlias(service);
             INIT_SERVICE = service;
 
             SharedPreferencesHandler PREFS = new SharedPreferencesHandler(alias, ctx);
             SERVICE_STORAGE.put(service, PREFS);
-            if (!rsa.encryptionKeysAvailable(alias)) {
-                // Encryption Keys aren't available, proceed to generate them
+            if ((!rsa.encryptionKeysAvailable(alias) && PREFS.isEmpty()) || !rsa.encryptionKeysAvailable(oaepAlias)) {
                 Integer userAuthenticationValidityDuration = options.optInt("userAuthenticationValidityDuration", DEFAULT_AUTHENTICATION_VALIDITY_TIME);
                 generateKeysContext = callbackContext;
                 generateEncryptionKeys(userAuthenticationValidityDuration);
                 if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT) {
                     unlockCredentialsLegacy();
                 }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && rsa.userAuthenticationRequired(alias)) {
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &&
+                (rsa.userAuthenticationRequired(alias) || rsa.userAuthenticationRequiredOaep(oaepAlias))) {
                 // User has to confirm authentication via device credentials.
                 String title = options.optString("unlockCredentialsTitle", null);
                 String description = options.optString("unlockCredentialsDescription", null);
@@ -131,13 +136,15 @@ public class SecureStorage extends CordovaPlugin {
                     try {
                         JSONObject result = AES.encrypt(value.getBytes(), adata.getBytes());
                         byte[] aes_key = Base64.decode(result.getString("key"), Base64.DEFAULT);
-                        byte[] aes_key_enc = rsa.encrypt(aes_key, service2alias(service));
+                        byte[] aes_key_enc = rsa.encryptOaep(aes_key, service2oaepAlias(service));
                         result.put("key", Base64.encodeToString(aes_key_enc, Base64.DEFAULT));
-                        getStorage(service).store(key, result.toString());
+                        result.put("wrapVersion", WRAP_VERSION_OAEP);
+                        result.put("wrapAlg", WRAP_ALG_OAEP);
+                        if (!getStorage(service).store(key, result.toString())) throw new Exception("Storage write failed");
                         callbackContext.success(key);
                     } catch (Exception e) {
-                        Log.e(TAG, "Encrypt failed :", e);
-                        callbackContext.error(e.getMessage());
+                        Log.e(TAG, "Secure storage operation failed");
+                        callbackContext.error("Secure storage operation failed");
                     }
                 }
             });
@@ -148,7 +155,7 @@ public class SecureStorage extends CordovaPlugin {
             final String key = args.getString(1);
             String value = getStorage(service).fetch(key);
             if (value != null) {
-                JSONObject json = new JSONObject(value);
+                final JSONObject json = new JSONObject(value);
                 final byte[] encKey = Base64.decode(json.getString("key"), Base64.DEFAULT);
                 JSONObject data = json.getJSONObject("value");
                 final byte[] ct = Base64.decode(data.getString("ct"), Base64.DEFAULT);
@@ -157,12 +164,11 @@ public class SecureStorage extends CordovaPlugin {
                 cordova.getThreadPool().execute(new Runnable() {
                     public void run() {
                         try {
-                            byte[] decryptedKey = rsa.decrypt(encKey, service2alias(service));
-                            String decrypted = new String(AES.decrypt(ct, decryptedKey, iv, adata, data.getString("mode")));
+                            String decrypted = readAndMigrate(service, key, json, encKey, ct, iv, adata, data.getString("mode"));
                             callbackContext.success(decrypted);
                         } catch (Exception e) {
-                            Log.e(TAG, "Decrypt failed :", e);
-                            callbackContext.error(e.getMessage());
+                            Log.e(TAG, "Secure storage operation failed");
+                            callbackContext.error("Secure storage operation failed");
                         }
                     }
                 });
@@ -181,8 +187,8 @@ public class SecureStorage extends CordovaPlugin {
         if ("remove".equals(action)) {
             String service = args.getString(0);
             String key = args.getString(1);
-            getStorage(service).remove(key);
-            callbackContext.success(key);
+            if (getStorage(service).remove(key)) callbackContext.success(key);
+            else callbackContext.error("Secure storage operation failed");
             return true;
         }
         if ("keys".equals(action)) {
@@ -213,6 +219,65 @@ public class SecureStorage extends CordovaPlugin {
     private String service2alias(String service) {
         String res = INIT_PACKAGENAME + "." + service;
         return res;
+    }
+
+    private String service2oaepAlias(String service) {
+        return service2alias(service) + ".oaep.v1";
+    }
+
+    private String readAndMigrate(String service, String key, JSONObject record, byte[] wrappedKey,
+            byte[] ct, byte[] iv, byte[] adata, String mode) throws Exception {
+        SharedPreferencesHandler storage = getStorage(service);
+        String staged = storage.fetchMigration(key);
+        if (staged != null) {
+            try {
+                JSONObject stagedRecord = new JSONObject(staged);
+                String stagedValue = decryptRecord(service, stagedRecord, true);
+                if (storage.store(key, staged) && stagedValue.equals(decryptRecord(service, new JSONObject(storage.fetch(key)), true))) {
+                    storage.removeMigration(key);
+                    return stagedValue;
+                }
+            } catch (Exception ignored) {
+                // Keep the original record authoritative if an interrupted stage is invalid.
+            }
+        }
+
+        if (record.has("wrapVersion") &&
+            (record.optInt("wrapVersion", -1) != WRAP_VERSION_OAEP || !WRAP_ALG_OAEP.equals(record.optString("wrapAlg"))))
+            throw new Exception("Unsupported secure storage wrapping format");
+        boolean versioned = record.optInt("wrapVersion", 0) == WRAP_VERSION_OAEP;
+        if (versioned) return decryptRecord(service, record, true);
+
+        byte[] legacyKey = rsa.decrypt(wrappedKey, service2alias(service));
+        String plaintext = new String(AES.decrypt(ct, legacyKey, iv, adata, mode), "UTF-8");
+        JSONObject migrated = AES.encrypt(plaintext.getBytes("UTF-8"), adata);
+        byte[] newAesKey = Base64.decode(migrated.getString("key"), Base64.DEFAULT);
+        migrated.put("key", Base64.encodeToString(rsa.encryptOaep(newAesKey, service2oaepAlias(service)), Base64.DEFAULT));
+        migrated.put("wrapVersion", WRAP_VERSION_OAEP);
+        migrated.put("wrapAlg", WRAP_ALG_OAEP);
+
+        String stagedJson = migrated.toString();
+        if (!storage.storeMigration(key, stagedJson)) throw new Exception("Storage migration failed");
+        if (!plaintext.equals(decryptRecord(service, new JSONObject(storage.fetchMigration(key)), true)))
+            throw new Exception("Storage migration verification failed");
+        if (!storage.store(key, stagedJson)) throw new Exception("Storage migration commit failed");
+        String committed = storage.fetch(key);
+        if (committed == null || !plaintext.equals(decryptRecord(service, new JSONObject(committed), true)))
+            throw new Exception("Storage migration verification failed");
+        if (!storage.removeMigration(key)) throw new Exception("Storage migration cleanup failed");
+        return plaintext;
+    }
+
+    private String decryptRecord(String service, JSONObject record, boolean oaep) throws Exception {
+        JSONObject data = record.getJSONObject("value");
+        byte[] wrapped = Base64.decode(record.getString("key"), Base64.DEFAULT);
+        byte[] aesKey = oaep
+            ? rsa.decryptOaep(wrapped, service2oaepAlias(service))
+            : rsa.decrypt(wrapped, service2alias(service));
+        return new String(AES.decrypt(
+            Base64.decode(data.getString("ct"), Base64.DEFAULT), aesKey,
+            Base64.decode(data.getString("iv"), Base64.DEFAULT),
+            Base64.decode(data.getString("adata"), Base64.DEFAULT), data.getString("mode")), "UTF-8");
     }
 
     private SharedPreferencesHandler getStorage(String service) {
@@ -270,12 +335,13 @@ public class SecureStorage extends CordovaPlugin {
                     generateKeysContextRunning = true;
                     try {
                         String alias = service2alias(INIT_SERVICE);
+                        String oaepAlias = service2oaepAlias(INIT_SERVICE);
                         SharedPreferencesHandler storage = getStorage(INIT_SERVICE);
-                        if (storage.isEmpty()) {
-                            //Solves Issue #96. The RSA key may have been deleted by changing the lock type.
-                            getStorage(INIT_SERVICE).clear();
+                        if (!rsa.encryptionKeysAvailable(alias) && storage.isEmpty()) {
                             rsa.createKeyPair(getContext(), alias, userAuthenticationValidityDuration);
                         }
+                        if (!rsa.encryptionKeysAvailable(oaepAlias))
+                            rsa.createOaepKeyPair(getContext(), oaepAlias, userAuthenticationValidityDuration);
                         generateKeysContext.success();
                     } catch (Exception e) {
                         Log.e(TAG, MSG_KEYS_FAILED, e);

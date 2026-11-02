@@ -56,4 +56,27 @@ public class RSA extends AbstractRSA {
         }
         return null;
     }
+
+    @Override
+    @TargetApi(Build.VERSION_CODES.M)
+    public AlgorithmParameterSpec getOaepInitParams(Context ctx, String alias, Integer userAuthenticationValidityDuration) {
+        Calendar notAfter = Calendar.getInstance();
+        notAfter.add(Calendar.YEAR, CERT_VALID_YEARS);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            KeyguardManager keyguard = (KeyguardManager) ctx.getSystemService(Context.KEYGUARD_SERVICE);
+            boolean deviceSecure = keyguard != null && keyguard.isDeviceSecure();
+            return new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_DECRYPT | KeyProperties.PURPOSE_ENCRYPT)
+                .setCertificateNotBefore(Calendar.getInstance().getTime())
+                .setCertificateNotAfter(notAfter.getTime())
+                .setAlgorithmParameterSpec(new RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
+                .setUserAuthenticationRequired(deviceSecure)
+                .setUserAuthenticationValidityDurationSeconds(userAuthenticationValidityDuration)
+                .setDigests(KeyProperties.DIGEST_SHA256)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
+                .setBlockModes(KeyProperties.BLOCK_MODE_ECB)
+                .build();
+        }
+        return null;
+    }
 }

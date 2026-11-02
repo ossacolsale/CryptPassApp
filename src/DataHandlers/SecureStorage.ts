@@ -46,7 +46,7 @@ class SecureStorage {
                         cordova.plugins.SecureKeyStore.get(resolve, reject, key);
                     });*/
                     const storage = await CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
-                    return CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                    return await CommonHelpers.withTimeout(new Promise((resolve, reject) => {
                         storage.get(
                             function (value) { resolve(value); },
                             function (error) {
@@ -105,9 +105,14 @@ class SecureStorage {
                     window.localStorage.removeItem(key);
                     return await window.cryptPassDesktop?.secureDelete(key) ?? false;
                 case 'android':
-                    return new Promise((resolve, reject)=> {
-                        cordova.plugins.SecureKeyStore.remove(resolve, reject, key);
-                    });
+                    const storage = await CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
+                    return await CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                        storage.remove(
+                            function (removedKey) { resolve(removedKey); },
+                            reject,
+                            key
+                        );
+                    }), 'Android secure storage deletion');
                 default:
                     return false;
             }

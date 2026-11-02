@@ -60,8 +60,10 @@ class WalletProfiles {
         const migrated: WalletProfileStore = { version: 1, activeId: profile.id, profiles: [profile] };
         if (!await this.writeStore(migrated)) throw new Error('Could not verify wallet profile migration');
         if (legacyConfig === false && await SecureStorage.setVal(this.activeConfigKey, profile.config) === false) {
-            await SecureStorage.delVal(this.storeKey);
-            throw new Error('Could not initialize wallet configuration');
+            const removedKey = await SecureStorage.delVal(this.storeKey);
+            if (removedKey !== this.storeKey)
+                throw new Error('Wallet initialization failed and profile rollback could not be verified; retry initialization to recover.');
+            throw new Error('Could not initialize wallet configuration; the partial profile migration was rolled back.');
         }
     }
 

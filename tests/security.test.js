@@ -315,8 +315,26 @@ test('local secure-storage fork preserves aliases and supports locked and unlock
     assert.match(rsa, /boolean deviceSecure = keyguard != null && keyguard\.isDeviceSecure\(\)/);
     assert.match(rsa, /setUserAuthenticationRequired\(deviceSecure\)/);
     assert.match(secureStorage, /String res = INIT_PACKAGENAME \+ "\." \+ service/);
-    assert.match(secureStorage, /INIT_SERVICE = service;[\s\S]*?SERVICE_STORAGE\.put\(service, PREFS\);\s*if \(!rsa\.encryptionKeysAvailable\(alias\)\)/);
+    assert.match(secureStorage, /INIT_SERVICE = service;[\s\S]*?SERVICE_STORAGE\.put\(service, PREFS\);\s*if \(\(!rsa\.encryptionKeysAvailable\(alias\) && PREFS\.isEmpty\(\)\) \|\| !rsa\.encryptionKeysAvailable\(oaepAlias\)\)/);
     assert.doesNotMatch(secureStorage, /if \(!isDeviceSecure\(\)\) \{\s*Log\.e\(TAG, MSG_DEVICE_NOT_SECURE\)/);
+});
+
+test('Android secure storage writes versioned OAEP records and stages legacy migration before replacement', () => {
+    const pluginRoot = 'local-plugins/cordova-plugin-cryptpass-secure-storage/src/android/';
+    const abstractRsa = source(pluginRoot + 'AbstractRSA.java');
+    const rsa = source(pluginRoot + 'RSA.java');
+    const secureStorage = source(pluginRoot + 'SecureStorage.java');
+    const prefs = source(pluginRoot + 'SharedPreferencesHandler.java');
+
+    assert.match(abstractRsa, /new OAEPParameterSpec\(\s*"SHA-256",\s*"MGF1",\s*MGF1ParameterSpec\.SHA1/);
+    assert.match(abstractRsa, /Cipher\.getInstance\("RSA\/ECB\/OAEPPadding"\)/);
+    assert.match(rsa, /ENCRYPTION_PADDING_RSA_OAEP/);
+    assert.match(secureStorage, /service2alias\(service\) \+ "\.oaep\.v1"/);
+    assert.match(secureStorage, /WRAP_VERSION_OAEP/);
+    assert.match(secureStorage, /rsa\.encryptOaep\(aes_key/);
+    assert.match(secureStorage, /rsa\.decrypt\(wrappedKey, service2alias\(service\)\)/);
+    assert.match(secureStorage, /storeMigration\(key, stagedJson\)[\s\S]*?decryptRecord\(service, new JSONObject\(storage\.fetchMigration\(key\)\), true\)[\s\S]*?storage\.store\(key, stagedJson\)[\s\S]*?storage\.fetch\(key\)/);
+    assert.match(prefs, /editor\.commit\(\)/);
 });
 
 test('Android Gradle debug suffix is versioned and the Android prepare hook is gone', () => {

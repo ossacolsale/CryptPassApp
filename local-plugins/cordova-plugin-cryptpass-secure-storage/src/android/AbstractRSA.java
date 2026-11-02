@@ -9,6 +9,10 @@ import java.security.Key;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.spec.AlgorithmParameterSpec;
+import java.security.spec.MGF1ParameterSpec;
+
+import javax.crypto.spec.OAEPParameterSpec;
+import javax.crypto.spec.PSource;
 
 import javax.crypto.Cipher;
 
@@ -20,6 +24,10 @@ public abstract class AbstractRSA {
 
 
     abstract AlgorithmParameterSpec getInitParams(Context ctx, String alias, Integer userAuthenticationValidityDuration) throws Exception;
+
+    AlgorithmParameterSpec getOaepInitParams(Context ctx, String alias, Integer userAuthenticationValidityDuration) throws Exception {
+        return getInitParams(ctx, alias, userAuthenticationValidityDuration);
+    }
 
     boolean encryptionKeysAvailable(String alias) {
         return isEntryAvailable(alias);
@@ -40,6 +48,10 @@ public abstract class AbstractRSA {
         }
     }
 
+    private Cipher getOaepCipher() throws Exception {
+        return Cipher.getInstance("RSA/ECB/OAEPPadding");
+    }
+
     private byte[] runCipher(int cipherMode, String alias, byte[] buf) throws Exception {
         Key key = loadKey(cipherMode, alias);
         assert CIPHER != null;
@@ -49,8 +61,25 @@ public abstract class AbstractRSA {
         }
     }
 
+    private byte[] runOaepCipher(int cipherMode, String alias, byte[] buf) throws Exception {
+        Key key = loadKey(cipherMode, alias);
+        Cipher cipher = getOaepCipher();
+        synchronized (cipher) {
+            cipher.init(cipherMode, key, new OAEPParameterSpec(
+                "SHA-256", "MGF1", MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT));
+            return cipher.doFinal(buf);
+        }
+    }
+
     public void createKeyPair(Context ctx, String alias, Integer userAuthenticationValidityDuration) throws Exception {
         AlgorithmParameterSpec spec = getInitParams(ctx, alias, userAuthenticationValidityDuration);
+        KeyPairGenerator kpGenerator = KeyPairGenerator.getInstance(getRSAKey(), KEYSTORE_PROVIDER);
+        kpGenerator.initialize(spec);
+        kpGenerator.generateKeyPair();
+    }
+
+    public void createOaepKeyPair(Context ctx, String alias, Integer userAuthenticationValidityDuration) throws Exception {
+        AlgorithmParameterSpec spec = getOaepInitParams(ctx, alias, userAuthenticationValidityDuration);
         KeyPairGenerator kpGenerator = KeyPairGenerator.getInstance(getRSAKey(), KEYSTORE_PROVIDER);
         kpGenerator.initialize(spec);
         kpGenerator.generateKeyPair();
@@ -63,6 +92,14 @@ public abstract class AbstractRSA {
 
     public byte[] decrypt(byte[] buf, String alias) throws Exception {
         return runCipher(Cipher.DECRYPT_MODE, alias, buf);
+    }
+
+    public byte[] encryptOaep(byte[] buf, String alias) throws Exception {
+        return runOaepCipher(Cipher.ENCRYPT_MODE, alias, buf);
+    }
+
+    public byte[] decryptOaep(byte[] buf, String alias) throws Exception {
+        return runOaepCipher(Cipher.DECRYPT_MODE, alias, buf);
     }
 
     protected abstract boolean isEntryAvailable(String alias);
@@ -105,6 +142,18 @@ public abstract class AbstractRSA {
             return true;
         } catch (Exception e) {
             // Other
+            return false;
+        }
+    }
+
+    boolean userAuthenticationRequiredOaep(String alias) {
+        try {
+            byte[] encrypted = encryptOaep(alias.getBytes(), alias);
+            decryptOaep(encrypted, alias);
+            return false;
+        } catch (InvalidKeyException noAuthEx) {
+            return true;
+        } catch (Exception e) {
             return false;
         }
     }

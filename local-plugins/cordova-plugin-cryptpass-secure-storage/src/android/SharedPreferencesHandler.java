@@ -18,20 +18,32 @@ public class SharedPreferencesHandler {
 	    return prefs.getAll().isEmpty();
     }
 
-    public void store(String key, String value){
+    public boolean store(String key, String value){
         SharedPreferences.Editor editor = prefs.edit();
         editor.putString("_SS_" + key, value);
-        editor.commit();
+        return editor.commit();
+    }
+
+    boolean storeMigration(String key, String value) {
+        return prefs.edit().putString("_SS_MIGRATED_" + key, value).commit();
+    }
+
+    String fetchMigration(String key) {
+        return prefs.getString("_SS_MIGRATED_" + key, null);
+    }
+
+    boolean removeMigration(String key) {
+        return prefs.edit().remove("_SS_MIGRATED_" + key).commit();
     }
 
     String fetch (String key){
         return prefs.getString("_SS_" + key, null);
     }
 
-    void remove (String key){
+    boolean remove (String key){
         SharedPreferences.Editor editor = prefs.edit();
         editor.remove("_SS_" + key);
-        editor.commit();
+        return editor.commit();
     }
 
     Set keys (){
