@@ -36,7 +36,8 @@
     "jsdom": "29.1.1",
     "process": "^0.11.10",
     "typescript": "^5.9.3",
-    "cordova-plugin-cryptpass-android-ui": "file:local-plugins/cordova-plugin-cryptpass-android-ui"
+    "cordova-plugin-cryptpass-android-ui": "file:local-plugins/cordova-plugin-cryptpass-android-ui",
+    "yaml": "2.9.1"
   },
   "cordova": {
     "platforms": [
