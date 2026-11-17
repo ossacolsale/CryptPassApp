@@ -7,7 +7,8 @@
 - Consultare uno stato di sessione solo se il lavoro può riprendere un'attività incompleta; verificarne le affermazioni con Git, codice e prove disponibili. Non creare un diario. Registrare un handoff breve solo per lavoro significativo ancora aperto.
 - Cercare usi e punti d'ingresso reali prima di rimuovere o cambiare API, dipendenze, plugin o formati persistenti. Il codice versionato e i test descrivono l'implementazione; la documentazione approvata descrive il comportamento previsto. Indagare e segnalare le divergenze.
 - Non registrare password, chiavi, sequenze di recupero, contenuto del vault o entries decriptate. Preservare la compatibilità dei vault e dei dati esistenti.
-- Operazioni distruttive, pubblicazioni, deployment e modifiche a servizi esterni richiedono autorizzazione esplicita. Non preparare né pubblicare release Android senza richiesta esplicita.
+- Per ogni modifica significativa, completata e verificata, è autorizzato eseguire autonomamente commit e push Git sul branch di lavoro, includendo solo le modifiche pertinenti al compito e preservando quelle preesistenti non correlate. Non usare force push.
+- Salvo i commit e push Git autorizzati sopra, operazioni distruttive, pubblicazioni, deployment e modifiche a servizi esterni richiedono autorizzazione esplicita. Tag e release richiedono autorizzazione esplicita. Non preparare né pubblicare release Android senza richiesta esplicita.
 - Verificare in proporzione al rischio e alla portata della modifica; controllare il diff finale e dichiarare solo verifiche realmente eseguite. Consultare README e configurazioni/scripts per i comandi di build e test.
 - Quando una modifica richiede prove di piattaforma, creare gli artefatti di test interessati: APK Android debug con ID distinto, build Electron release, o entrambi se coinvolte entrambe le piattaforme. Una verifica dei tipi non aggiorna il bundle applicativo.
 
