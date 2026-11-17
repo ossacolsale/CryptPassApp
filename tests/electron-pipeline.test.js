@@ -12,6 +12,19 @@ const buildFile = require.resolve('cordova-electron/lib/build');
 const buildRequire = createRequire(buildFile);
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
+test('clean installs pack local plugins and their locked versions match the source manifests', () => {
+    assert.match(read('.npmrc'), /^install-links=true$/m);
+    const manifest = JSON.parse(read('package.json'));
+    const lock = JSON.parse(read('package-lock.json'));
+    for (const [name, specifier] of Object.entries(manifest.devDependencies)) {
+        if (!specifier.startsWith('file:')) continue;
+        const plugin = JSON.parse(read(path.join(specifier.slice(5), 'package.json')));
+        const locked = lock.packages[`node_modules/${name}`];
+        assert.equal(locked.version, plugin.version, name);
+        assert.notEqual(locked.link, true, name);
+    }
+});
+
 function patchInMemory(source) {
     let result;
     const mockFs = { existsSync: () => true, readFileSync: () => source, writeFileSync: (_, value) => { result = value; } };

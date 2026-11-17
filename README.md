@@ -26,6 +26,8 @@ Browser builds share the UI and submit protection, but the current filesystem ad
 
 Use Node.js 22 and Cordova CLI 11.1.0 for the Electron packaging toolchain. Install dependencies with `npm ci`; the postinstall script applies a compatibility patch for `cordova-electron@4.0.0` and `electron-builder@26.15.3`.
 
+The committed `.npmrc` uses `install-links=true` so repository-local plugins are installed as packed copies, matching the lockfile on clean machines and CI runners.
+
 ```sh
 npm install --global cordova@11.1.0
 npm ci
