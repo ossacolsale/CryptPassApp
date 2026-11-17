@@ -34,7 +34,7 @@ for (const [platform, native, expected] of [['linux', 'linux', ['AppImage', 'deb
         const context = {
             module: { exports: {} }, __dirname: path.dirname(buildFile), process: { platform },
             require(name) {
-                if (name.endsWith('/build/base.json')) return JSON.parse(fs.readFileSync(name, 'utf8'));
+                if (name.endsWith(path.join('build', 'base.json'))) return JSON.parse(fs.readFileSync(name, 'utf8'));
                 if (name === 'electron-builder') return { build: async value => { options = value; } };
                 return buildRequire(name);
             }
@@ -83,13 +83,14 @@ test('artifact guard requires all three final distributables and rejects ZIP-onl
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('Actions workflow gates release on native builds and limits write permissions to tag publication', () => {
+test('Actions publishes master pushes only after native builds, targeting their exact commit', () => {
     const workflow = yaml.parse(read('.github/workflows/electron.yml'));
     assert.ok('workflow_dispatch' in workflow.on);
-    assert.deepEqual(workflow.on.push.tags, ['v*.*.*']);
+    assert.deepEqual(workflow.on.push.branches, ['master']);
+    assert.equal(workflow.on.push.tags, undefined, 'created release tags must not trigger duplicate builds');
     assert.deepEqual(workflow.permissions, { contents: 'read' });
     assert.equal(workflow.jobs.release.needs, 'build');
-    assert.match(workflow.jobs.release.if, /github.event_name == 'push'/);
+    assert.equal(workflow.jobs.release.if, "github.event_name == 'push' && github.ref == 'refs/heads/master'");
     assert.deepEqual(workflow.jobs.release.permissions, { contents: 'write' });
     assert.deepEqual(workflow.jobs.build.strategy.matrix.include.map(item => item.platform), ['windows', 'linux']);
     const steps = workflow.jobs.build.steps;
@@ -102,4 +103,11 @@ test('Actions workflow gates release on native builds and limits write permissio
     const downloads = workflow.jobs.release.steps.filter(step => step.uses?.startsWith('actions/download-artifact'));
     assert.deepEqual(downloads.map(step => step.with.name), ['electron-windows-x64', 'electron-linux-x64']);
     assert.ok(downloads.every(step => step.with.path === 'release-assets'));
+    const publish = workflow.jobs.release.steps.find(step => step.name === 'Create GitHub release');
+    assert.equal(publish.env.RELEASE_TAG, 'v${{ steps.version.outputs.value }}');
+    assert.equal(publish.env.RELEASE_COMMIT, '${{ github.sha }}');
+    assert.match(publish.run, /gh release create "\$RELEASE_TAG" --target "\$RELEASE_COMMIT"/);
+    assert.match(publish.run, /git ls-remote --tags origin/);
+    assert.match(publish.run, /if \[ -n "\$existing_tag" \]; then[\s\S]*exit 1/);
+    assert.doesNotMatch(publish.run, /--clobber|--verify-tag/);
 });
