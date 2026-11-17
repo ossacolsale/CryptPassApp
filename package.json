@@ -1,7 +1,7 @@
 {
   "name": "com.cryptpass.app",
   "displayName": "CryptPass",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "A sample Apache Cordova application that responds to the deviceready event.",
   "main": "index.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "build-electron": "npm run electron-compile && cordova build electron --release",
     "build-android": "npm run cryptpass:build && npm run locales:build && tsc && cordova build android --release",
     "electron-compile": "npm run cryptpass:build && npm run locales:build && tsc",
-    "cryptpass:build": "npm run build --prefix node_modules/cryptpass && npm run bundle --prefix node_modules/cryptpass && node scripts/copy-cryptpass-bundle.js",
+    "cryptpass:build": "node -e \"require('fs').rmSync('node_modules/cryptpass/dist', { recursive: true, force: true })\" && tsc -p node_modules/cryptpass && npm run bundle --prefix node_modules/cryptpass && node scripts/copy-cryptpass-bundle.js",
     "postinstall": "node scripts/patch-cordova-electron.js",
     "locales:build": "node scripts/build-locales.js && node scripts/build-app-info.js"
   },

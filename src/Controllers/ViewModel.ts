@@ -80,7 +80,7 @@ abstract class View implements ViewModel {
         return raw ? val : val.trim();
     }
 
-    protected focusEl(elId: string, alsoSelect: boolean = false) {
+    protected focusEl(elId: string, alsoSelect: boolean = false, activateWindow: boolean = true) {
         const focus = (): void => {
             const input = this.getEl(elId) as HTMLInputElement | null;
             if (!input) return;
@@ -91,7 +91,7 @@ abstract class View implements ViewModel {
                 if (alsoSelect) input.select();
             } catch (_) { /* Some control types do not expose selection ranges. */ }
         };
-        if (cordova.platformId === 'electron' && window.cryptPassDesktop?.focusWindow) {
+        if (activateWindow && cordova.platformId === 'electron' && window.cryptPassDesktop?.focusWindow) {
             void window.cryptPassDesktop.focusWindow().then(focus, focus);
         } else focus();
     }

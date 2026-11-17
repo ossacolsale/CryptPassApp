@@ -100,6 +100,7 @@
   "entry.mandatory": "Nome * (obbligatorio)",
   "entry.namePlaceholder": "Inserisci il nome della voce",
   "entry.tagsPlaceholder": "Etichette separate da virgole (es. \"lavoro, Windows\")",
+  "entry.saving": "Salvataggio in corso",
   "entry.save": "Salva voce",
   "entry.remove": "Elimina voce",
   "entry.confirmDeleteQuestion": "Confermi di voler procedere?",

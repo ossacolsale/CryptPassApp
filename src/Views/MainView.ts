@@ -283,6 +283,12 @@ class MainView extends View {
         this.focusPassword(true, cordova.platformId === 'electron');
     }
 
+    private readonly onUnlockWindowFocus = (): void => this.focusPassword(false);
+
+    public End(): void {
+        window.removeEventListener('focus', this.onUnlockWindowFocus);
+    }
+
     private focusPassword(select: boolean, reset: boolean = false): void {
         if (cordova.platformId !== 'electron') {
             this.focusEl(this.IdPassword1, select);
@@ -290,7 +296,12 @@ class MainView extends View {
             return;
         }
 
+        // Unlock rendering must never activate or restore an OS window. Retry DOM
+        // focus when the user returns, including after a minimize-triggered lock.
+        window.addEventListener('focus', this.onUnlockWindowFocus);
+        const form = this.getEl(this.IdUnlockForm);
         window.requestAnimationFrame(() => window.setTimeout(() => {
+            if (!form?.isConnected || this.getEl(this.IdUnlockForm) !== form) return;
             let input = this.getEl(this.IdPassword1) as HTMLInputElement | null;
             if (!input) return;
             if (reset) {
@@ -315,15 +326,14 @@ class MainView extends View {
             input.disabled = false;
             input.readOnly = false;
             const focusInput = (): void => {
-                const activeInput = this.getEl(this.IdPassword1) as HTMLInputElement | null;
-                if (!activeInput) return;
-                activeInput.focus({ preventScroll: true });
-                if (select) activeInput.select();
+                if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+                this.focusEl(this.IdPassword1, select, false);
             };
-            void window.cryptPassDesktop?.focusWindow().then(
-                () => window.requestAnimationFrame(focusInput),
-                () => window.requestAnimationFrame(focusInput)
-            );
+            // Recover a stale Chromium editing surface only while the OS window
+            // is already active; the main process enforces this condition.
+            const desktop = window.cryptPassDesktop;
+            if (desktop) void desktop.focusWindow(false).then(focusInput, focusInput);
+            else focusInput();
         }, 0));
     }
 

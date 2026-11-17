@@ -15,9 +15,11 @@ if (start < 0 || end < 0) throw new Error('Cannot locate cordova-electron build(
 const method = `    build () {
         const { Platform, Arch } = require('app-builder-lib');
         const config = { ...(this.buildSettings.config || {}) };
-        const buildOptions = { projectDir: this.api.locations.www, config };
+        const buildOptions = { projectDir: this.api.locations.www, config, publish: 'never' };
         const targets = new Map();
         for (const [name, platform] of [['linux', Platform.LINUX], ['mac', Platform.MAC], ['win', Platform.WINDOWS]]) {
+            // Each runner only packages its native platform.
+            if (platform.nodeName !== process.platform) continue;
             const settings = config[name];
             if (!settings) continue;
             const byArch = new Map();

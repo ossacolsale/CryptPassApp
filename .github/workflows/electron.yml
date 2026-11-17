@@ -1,0 +1,95 @@
+name: Electron x64
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} x64
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+          - platform: linux
+            runner: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Check versions and release tag
+        run: node scripts/check-release-version.js
+      - run: npm ci
+      - name: Install Cordova CLI
+        run: npm install --global cordova@11.1.0
+      - run: npm test
+      - run: npx tsc --noEmit
+      - name: Prepare native Electron platform
+        run: cordova platform add electron@4.0.0 --nosave
+      - run: npm run build-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify native distributables
+        run: node scripts/check-electron-artifacts.js ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.platform }}-x64
+          if-no-files-found: error
+          path: |
+            platforms/electron/build/CryptPass-*-${{ matrix.platform }}-x64.exe
+            platforms/electron/build/CryptPass-*-${{ matrix.platform }}-x64.AppImage
+            platforms/electron/build/CryptPass-*-${{ matrix.platform }}-x64.deb
+
+  release:
+    name: Publish version tag
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify release version
+        id: version
+        run: echo "value=$(node scripts/check-release-version.js)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: electron-windows-x64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: electron-linux-x64
+          path: release-assets
+      - name: Verify all three release files
+        run: node scripts/check-electron-artifacts.js all release-assets
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --title "CryptPass $RELEASE_VERSION" --generate-notes \
+            "release-assets/CryptPass-$RELEASE_VERSION-windows-x64.exe" \
+            "release-assets/CryptPass-$RELEASE_VERSION-linux-x64.AppImage" \
+            "release-assets/CryptPass-$RELEASE_VERSION-linux-x64.deb"

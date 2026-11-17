@@ -800,8 +800,10 @@ class WalletProfiles {
             if (!(yield this.writeStore(migrated)))
                 throw new Error('Could not verify wallet profile migration');
             if (legacyConfig === false && (yield SecureStorage.setVal(this.activeConfigKey, profile.config)) === false) {
-                yield SecureStorage.delVal(this.storeKey);
-                throw new Error('Could not initialize wallet configuration');
+                const removedKey = yield SecureStorage.delVal(this.storeKey);
+                if (removedKey !== this.storeKey)
+                    throw new Error('Wallet initialization failed and profile rollback could not be verified; retry initialization to recover.');
+                throw new Error('Could not initialize wallet configuration; the partial profile migration was rolled back.');
             }
         });
     }
@@ -1162,7 +1164,7 @@ class View {
         const val = this.getEl(elId).value;
         return raw ? val : val.trim();
     }
-    focusEl(elId, alsoSelect = false) {
+    focusEl(elId, alsoSelect = false, activateWindow = true) {
         var _a;
         const focus = () => {
             const input = this.getEl(elId);
@@ -1177,7 +1179,7 @@ class View {
             }
             catch (_) { }
         };
-        if (cordova.platformId === 'electron' && ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.focusWindow)) {
+        if (activateWindow && cordova.platformId === 'electron' && ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.focusWindow)) {
             void window.cryptPassDesktop.focusWindow().then(focus, focus);
         }
         else
@@ -1660,7 +1662,7 @@ class SecureStorage {
                     }
                     case 'android':
                         const storage = yield CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
-                        return CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                        return yield CommonHelpers.withTimeout(new Promise((resolve, reject) => {
                             storage.get(function (value) { resolve(value); }, function (error) {
                                 if (error && error.message && error.message.toLowerCase().indexOf('not found') !== -1) {
                                     resolve(false);
@@ -1709,9 +1711,10 @@ class SecureStorage {
                         window.localStorage.removeItem(key);
                         return (_b = yield ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.secureDelete(key))) !== null && _b !== void 0 ? _b : false;
                     case 'android':
-                        return new Promise((resolve, reject) => {
-                            cordova.plugins.SecureKeyStore.remove(resolve, reject, key);
-                        });
+                        const storage = yield CommonHelpers.withTimeout(getAndroidSecureStorage(), 'Android secure storage initialization');
+                        return yield CommonHelpers.withTimeout(new Promise((resolve, reject) => {
+                            storage.remove(function (removedKey) { resolve(removedKey); }, reject, key);
+                        }), 'Android secure storage deletion');
                     default:
                         return false;
                 }
@@ -2068,6 +2071,7 @@ class MainView extends View {
         this.IdPasswordOld = 'PasswordOld';
         this.IdHandleChPwd = 'HandleChPwd';
         this.IdDontChPwd = 'DontChPwd';
+        this.onUnlockWindowFocus = () => this.focusPassword(false);
         this.Handlers = [
             { name: 'MainViewClick', handler: (e) => this.onClick(e), type: 'click' },
             { name: 'MainViewSubmit', handler: (e) => { e.preventDefault(); this.onSubmit(e); }, type: 'submit' }
@@ -2314,14 +2318,20 @@ class MainView extends View {
     reactivateUnlockPassword() {
         this.focusPassword(true, cordova.platformId === 'electron');
     }
+    End() {
+        window.removeEventListener('focus', this.onUnlockWindowFocus);
+    }
     focusPassword(select, reset = false) {
         if (cordova.platformId !== 'electron') {
             this.focusEl(this.IdPassword1, select);
             DeviceAuth.showKeyboard();
             return;
         }
+        window.addEventListener('focus', this.onUnlockWindowFocus);
+        const form = this.getEl(this.IdUnlockForm);
         window.requestAnimationFrame(() => window.setTimeout(() => {
-            var _a;
+            if (!(form === null || form === void 0 ? void 0 : form.isConnected) || this.getEl(this.IdUnlockForm) !== form)
+                return;
             let input = this.getEl(this.IdPassword1);
             if (!input)
                 return;
@@ -2346,14 +2356,15 @@ class MainView extends View {
             input.disabled = false;
             input.readOnly = false;
             const focusInput = () => {
-                const activeInput = this.getEl(this.IdPassword1);
-                if (!activeInput)
+                if (document.visibilityState !== 'visible' || !document.hasFocus())
                     return;
-                activeInput.focus({ preventScroll: true });
-                if (select)
-                    activeInput.select();
+                this.focusEl(this.IdPassword1, select, false);
             };
-            void ((_a = window.cryptPassDesktop) === null || _a === void 0 ? void 0 : _a.focusWindow().then(() => window.requestAnimationFrame(focusInput), () => window.requestAnimationFrame(focusInput)));
+            const desktop = window.cryptPassDesktop;
+            if (desktop)
+                void desktop.focusWindow(false).then(focusInput, focusInput);
+            else
+                focusInput();
         }, 0));
     }
     handleDontChPwd() {
@@ -2638,6 +2649,8 @@ class PassView extends View {
         this.hideVal = '•••••••••••••••';
         this.valExt = '_val';
         this.vocBarPre = 'vocbar_';
+        this.savingEntry = false;
+        this.entrySaveActive = true;
         this.showHideTagsStatus = 'hide';
         this.searchEntry = '';
         this.CheckedTags = [];
@@ -2708,11 +2721,15 @@ class PassView extends View {
         }, 150);
     }
     End() {
+        this.entrySaveActive = false;
         if (this.searchTimer !== undefined)
             window.clearTimeout(this.searchTimer);
         this.searchTimer = undefined;
     }
     ResumeAfterLock() {
+        this.entrySaveActive = true;
+        this.setEntrySaveFeedback(this.savingEntry);
+        this.finishEntrySave();
         this.searchTimer = undefined;
         this.searchRoutine(State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter), true);
     }
@@ -2789,10 +2806,10 @@ class PassView extends View {
         return __awaiter(this, void 0, void 0, function* () {
             switch (e.target.id) {
                 case this.IdAddEntryForm:
-                    this.addEntry();
+                    yield this.addEntry();
                     break;
                 case this.IdEditEntryForm:
-                    this.editEntry();
+                    yield this.editEntry();
                     break;
             }
         });
@@ -2826,6 +2843,8 @@ class PassView extends View {
     onClick(e) {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b;
+            if (this.savingEntry)
+                return;
             const el = e.target;
             switch (el.id) {
                 case this.IdOtherOptions:
@@ -3037,8 +3056,9 @@ class PassView extends View {
             ${ViewHelpers.button(this.IdDeleteEntry, 'Delete entry', this.ClassFormBtnSec)}</p>
             <h2>Edit entry</h2>
             <form id="${this.IdEditEntryForm}">
-            ${this.entryMask(entry, false)}
-            <p>${ViewHelpers.submit(this.IdEditEntry, 'Save entry', this.ClassFormBtn)}</p>
+            <fieldset data-entry-fields>${this.entryMask(entry, false)}
+            <p>${ViewHelpers.submit(this.IdEditEntry, 'Save entry', this.ClassFormBtn)}</p></fieldset>
+            ${this.entrySaveStatus()}
             </form>
             `, () => this.clickEl(this.IdGoToView));
         }
@@ -3068,9 +3088,9 @@ class PassView extends View {
         const Name = this.getVal(this.IdName);
         const Description = this.getVal(this.IdDesc);
         const Tags = this.getVal(this.IdTags);
-        const Username = this.getVal(this.IdUsername + this.valExt);
-        const Password = this.getVal(this.IdPassword + this.valExt);
-        const PIN = this.getVal(this.IdPIN + this.valExt);
+        const Username = this.entrySecretValue(this.IdUsername);
+        const Password = this.entrySecretValue(this.IdPassword);
+        const PIN = this.entrySecretValue(this.IdPIN);
         let Other = {};
         if (this.OtherCounter > 0) {
             let counter = 0;
@@ -3079,7 +3099,7 @@ class PassView extends View {
                 let id = this.IdOtherKey + counter;
                 if ($('#' + id)[0] !== undefined) {
                     let key = this.getVal(id);
-                    let val = this.getVal(this.IdOtherValue + counter + this.valExt);
+                    let val = this.entrySecretValue(this.IdOtherValue + counter);
                     if (key !== '' && val != '')
                         Other[key] = val;
                 }
@@ -3116,79 +3136,104 @@ class PassView extends View {
             }
         });
     }
+    entrySecretValue(id) {
+        return this.getVal(document.activeElement === this.getEl(id) ? id : id + this.valExt);
+    }
+    entrySaveStatus() {
+        return '<div data-entry-save-status role="status" aria-live="polite" aria-atomic="true"></div>';
+    }
+    setEntrySaveFeedback(busy, failed = false) {
+        if (!this.entrySaveActive)
+            return;
+        const form = this.getEl(this.IdAddEntryForm) || this.getEl(this.IdEditEntryForm);
+        if (!form)
+            return;
+        form.setAttribute('aria-busy', String(busy));
+        const fields = form.querySelector('[data-entry-fields]');
+        if (fields)
+            fields.disabled = busy;
+        const submit = form.querySelector('[type="submit"]');
+        if (submit) {
+            submit.disabled = busy;
+            submit.textContent = Localization.text(busy ? 'entry.saving' : 'entry.save');
+        }
+        const status = form.querySelector('[data-entry-save-status]');
+        if (status) {
+            status.replaceChildren();
+            if (busy) {
+                const spinner = document.createElement('span');
+                spinner.className = 'spinner-border spinner-border-sm me-2';
+                spinner.setAttribute('aria-hidden', 'true');
+                status.appendChild(spinner);
+            }
+            status.appendChild(document.createTextNode(busy ? Localization.text('entry.saving') : failed ? Localization.text('entry.walletSaveError') : ''));
+        }
+    }
+    finishEntrySave() {
+        if (!this.entrySaveActive || State.Password === '' || this.entrySaveOutcome === undefined)
+            return;
+        const result = this.entrySaveOutcome;
+        this.entrySaveOutcome = undefined;
+        if (result === false) {
+            this.setEntrySaveFeedback(false, true);
+        }
+        else {
+            State.CryptPass = result.cryptPass;
+            State.EntriesManage = result.entries;
+            this.viewEntry(result.name);
+        }
+    }
     editEntry() {
-        return __awaiter(this, void 0, void 0, function* () {
-            const NameOld = this.getVal(this.IdNameOld);
-            const Name = this.getVal(this.IdName);
-            if (Name != '') {
-                let checkName = 'Invalid';
-                if (Name != NameOld) {
-                    if (State.EntriesManage.GetEntry(Name) === false) {
-                        checkName = 'Changed';
-                    }
-                    else {
-                        alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
-                        this.focusEl(this.IdName);
-                    }
-                }
-                else
-                    checkName = 'OK';
-                if (checkName != 'Invalid') {
-                    if ((checkName == 'Changed' && State.EntriesManage.UpdateEntryName(NameOld, Name)) || checkName == 'OK') {
-                        if (State.EntriesManage.UpdateEntry(this.composeEntry())) {
-                            this.LoaderShow();
-                            const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.Password);
-                            this.LoaderHide();
-                            if (setresult) {
-                                this.viewEntry(Name);
-                            }
-                            else {
-                                alert('Sorry, generic error during wallet saving. Please retry.');
-                            }
-                        }
-                        else {
-                            alert('Sorry, generic error during entry updating. Please retry.');
-                        }
-                    }
-                    else {
-                        alert('Sorry, generic error during entry name changing. Please retry.');
-                    }
-                }
-            }
-            else {
-                alert('Insert a name for this entry!');
-                this.focusEl(this.IdName);
-            }
-        });
+        return __awaiter(this, void 0, void 0, function* () { yield this.saveEntry(true); });
     }
     addEntry() {
+        return __awaiter(this, void 0, void 0, function* () { yield this.saveEntry(false); });
+    }
+    saveEntry(edit) {
         return __awaiter(this, void 0, void 0, function* () {
-            const Name = this.getVal(this.IdName);
-            if (Name != '') {
-                if (State.EntriesManage.GetEntry(Name) === false) {
-                    if (State.EntriesManage.AddEntry(this.composeEntry())) {
-                        this.LoaderShow();
-                        const setresult = yield State.CryptPass.SetEntries(State.EntriesManage.Export(), State.Password);
-                        this.LoaderHide();
-                        if (setresult) {
-                            this.viewEntry(Name);
-                        }
-                        else {
-                            alert('Sorry, generic error. Please retry.');
-                        }
-                    }
-                    else {
-                        alert('Sorry, generic error. Please retry.');
-                    }
-                }
-                else {
-                    alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
-                    this.focusEl(this.IdName);
-                }
-            }
-            else {
-                alert('Insert a name for this entry!');
+            if (this.savingEntry)
+                return;
+            const name = this.getVal(this.IdName);
+            const oldName = edit ? this.getVal(this.IdNameOld) : name;
+            if (!name) {
+                alert(Localization.text('entry.noName'));
                 this.focusEl(this.IdName);
+                return;
+            }
+            if ((!edit || name !== oldName) && State.EntriesManage.GetEntry(name) !== false) {
+                alert(Localization.text('entry.duplicateNamed').replace('{name}', name));
+                this.focusEl(this.IdName);
+                return;
+            }
+            const entry = this.composeEntry();
+            const session = State.CryptPass;
+            const password = State.Password;
+            const key = State.K;
+            this.savingEntry = true;
+            this.entrySaveOutcome = undefined;
+            this.setEntrySaveFeedback(true);
+            try {
+                yield new Promise(resolve => window.setTimeout(resolve, 0));
+                const data = yield Config.readData();
+                const uri = yield Config.getActiveKeyPassUri();
+                if (!uri || State.Password === '' || State.CryptPass !== session)
+                    throw new Error('Session changed');
+                const candidate = new LibCryptPass.CryptPassCached(Object.assign(Object.assign({}, StandardRnW), { KeyPassWriter: (vault, keepBackup) => FS.WriteFile(uri, JSON.stringify(vault), keepBackup) }), data.kp, data.se);
+                const entries = candidate.GetEntriesManage(key, true);
+                const updated = edit
+                    ? (name === oldName || entries.UpdateEntryName(oldName, name)) && entries.UpdateEntry(entry)
+                    : entries.AddEntry(entry);
+                if (!updated || !(yield candidate.SetEntries(entries.Export(), password)))
+                    throw new Error('Entry save failed');
+                this.entrySaveOutcome = { name, cryptPass: candidate, entries };
+            }
+            catch (_) {
+                this.entrySaveOutcome = false;
+            }
+            finally {
+                this.savingEntry = false;
+                this.setEntrySaveFeedback(false);
+                this.finishEntrySave();
             }
         });
     }
@@ -3197,8 +3242,9 @@ class PassView extends View {
             this.setApp(`<p>${ViewHelpers.button(this.IdGoToInit, 'Go back', this.ClassFormBtnSec)}</p>
         <h2>Add new entry</h2>
         <form id="${this.IdAddEntryForm}">
-        ${this.entryMask(undefined, false)}
-        <p>${ViewHelpers.submit(this.IdAddEntry, 'Save entry', this.ClassFormBtn)}</p>
+        <fieldset data-entry-fields>${this.entryMask(undefined, false)}
+        <p>${ViewHelpers.submit(this.IdAddEntry, 'Save entry', this.ClassFormBtn)}</p></fieldset>
+        ${this.entrySaveStatus()}
         </form>`, () => this.clickEl(this.IdGoToInit));
         });
     }

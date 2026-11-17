@@ -113,12 +113,20 @@ class PassView extends View implements ViewModel {
         },150);
     }
 
+    private savingEntry = false;
+    private entrySaveActive = true;
+    private entrySaveOutcome?: { name: string; cryptPass: CryptPassCached; entries: EntriesManage } | false;
+
     public End(): void {
+        this.entrySaveActive = false;
         if (this.searchTimer !== undefined) window.clearTimeout(this.searchTimer);
         this.searchTimer = undefined;
     }
 
     public ResumeAfterLock(): void {
+        this.entrySaveActive = true;
+        this.setEntrySaveFeedback(this.savingEntry);
+        this.finishEntrySave();
         this.searchTimer = undefined;
         this.searchRoutine(State.EntriesManage.GetEntryNames().sort(CommonHelpers.insensitiveSorter), true);
     }
@@ -199,10 +207,10 @@ class PassView extends View implements ViewModel {
     protected async onSubmit(e: Event) {
         switch ((e.target as HTMLFormElement).id) {
            case this.IdAddEntryForm:
-                this.addEntry();
+                await this.addEntry();
            break;
            case this.IdEditEntryForm:
-                this.editEntry();
+                await this.editEntry();
            break;
         }
     }
@@ -241,6 +249,7 @@ class PassView extends View implements ViewModel {
     }
 
     protected async onClick(e: Event) {
+        if (this.savingEntry) return;
         const el = e.target as HTMLInputElement;
         switch (el.id) {
             case this.IdOtherOptions:
@@ -461,8 +470,9 @@ class PassView extends View implements ViewModel {
             ${ViewHelpers.button(this.IdDeleteEntry,'Delete entry',this.ClassFormBtnSec)}</p>
             <h2>Edit entry</h2>
             <form id="${this.IdEditEntryForm}">
-            ${this.entryMask(entry, false)}
-            <p>${ViewHelpers.submit(this.IdEditEntry,'Save entry',this.ClassFormBtn)}</p>
+            <fieldset data-entry-fields>${this.entryMask(entry, false)}
+            <p>${ViewHelpers.submit(this.IdEditEntry,'Save entry',this.ClassFormBtn)}</p></fieldset>
+            ${this.entrySaveStatus()}
             </form>
             `,() => this.clickEl(this.IdGoToView));
         }
@@ -493,9 +503,9 @@ class PassView extends View implements ViewModel {
         const Name = this.getVal(this.IdName);
         const Description = this.getVal(this.IdDesc);
         const Tags = this.getVal(this.IdTags);
-        const Username = this.getVal(this.IdUsername+this.valExt);
-        const Password = this.getVal(this.IdPassword+this.valExt);
-        const PIN = this.getVal(this.IdPIN+this.valExt);
+        const Username = this.entrySecretValue(this.IdUsername);
+        const Password = this.entrySecretValue(this.IdPassword);
+        const PIN = this.entrySecretValue(this.IdPIN);
         let Other: {[Name: string]: string} = {};
         if (this.OtherCounter > 0) {
             let counter = 0;
@@ -504,7 +514,7 @@ class PassView extends View implements ViewModel {
                 let id = this.IdOtherKey+counter;
                 if ($('#'+id)[0] !== undefined) {
                     let key = this.getVal(id);
-                    let val = this.getVal(this.IdOtherValue+counter+this.valExt);
+                    let val = this.entrySecretValue(this.IdOtherValue+counter);
                     if (key !== '' && val != '')
                         Other[key] = val;
                 }
@@ -539,78 +549,113 @@ class PassView extends View implements ViewModel {
         }
     }
 
-    protected async editEntry() {
-        const NameOld = this.getVal(this.IdNameOld);
-        const Name = this.getVal(this.IdName);
-        if (Name != '') {
-            let checkName: 'OK' | 'Changed' | 'Invalid' = 'Invalid';
-            if (Name != NameOld) {
-                if (State.EntriesManage.GetEntry(Name) === false) {
-                    checkName = 'Changed';
-                } else {
-                    alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
-                    this.focusEl(this.IdName);
-                }
-            } else checkName = 'OK';
-            if (checkName != 'Invalid') {  
-                if ((checkName == 'Changed' && State.EntriesManage.UpdateEntryName(NameOld,Name)) || checkName == 'OK') {
-                    if (State.EntriesManage.UpdateEntry(this.composeEntry())) {
-                        this.LoaderShow();
-                        const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.Password);
-                        this.LoaderHide();
-                        if (setresult) {
-                            this.viewEntry(Name);
-                        } else {
-                            alert('Sorry, generic error during wallet saving. Please retry.');
-                        }
-                    } else {
-                        alert('Sorry, generic error during entry updating. Please retry.');
-                    }
-                } else {
-                    alert('Sorry, generic error during entry name changing. Please retry.');
-                }
+    // Keyboard submit does not blur the current control; its hidden copy may be stale.
+    private entrySecretValue(id: string): string {
+        return this.getVal(document.activeElement === this.getEl(id) ? id : id + this.valExt);
+    }
+
+    private entrySaveStatus(): string {
+        return '<div data-entry-save-status role="status" aria-live="polite" aria-atomic="true"></div>';
+    }
+
+    private setEntrySaveFeedback(busy: boolean, failed: boolean = false): void {
+        if (!this.entrySaveActive) return;
+        const form = this.getEl(this.IdAddEntryForm) || this.getEl(this.IdEditEntryForm);
+        if (!form) return;
+        form.setAttribute('aria-busy', String(busy));
+        const fields = form.querySelector<HTMLFieldSetElement>('[data-entry-fields]');
+        if (fields) fields.disabled = busy;
+        const submit = form.querySelector<HTMLButtonElement>('[type="submit"]');
+        if (submit) {
+            submit.disabled = busy;
+            submit.textContent = Localization.text(busy ? 'entry.saving' : 'entry.save');
+        }
+        const status = form.querySelector<HTMLElement>('[data-entry-save-status]');
+        if (status) {
+            status.replaceChildren();
+            if (busy) {
+                const spinner = document.createElement('span');
+                spinner.className = 'spinner-border spinner-border-sm me-2';
+                spinner.setAttribute('aria-hidden', 'true');
+                status.appendChild(spinner);
             }
-        } else {
-            alert('Insert a name for this entry!');
-            this.focusEl(this.IdName);
+            status.appendChild(document.createTextNode(busy ? Localization.text('entry.saving') : failed ? Localization.text('entry.walletSaveError') : ''));
         }
     }
 
-    protected async addEntry() {
-        const Name = this.getVal(this.IdName);
-        if (Name != '') {
-            if (State.EntriesManage.GetEntry(Name) === false) {
-                if (State.EntriesManage.AddEntry(this.composeEntry())) {
-                    this.LoaderShow();
-                    const setresult = await State.CryptPass.SetEntries(State.EntriesManage.Export(),State.Password);
-                    this.LoaderHide();
-                    if (setresult) {
-                        //alert('Entry correctly added to your wallet');
-                        this.viewEntry(Name);
-                    } else {
-                        alert('Sorry, generic error. Please retry.');
-                    }
-                } else {
-                    alert('Sorry, generic error. Please retry.');
-                }
-                
-            } else {
-                alert(Localization.text('entry.duplicateNamed').replace('{name}', Name));
-                this.focusEl(this.IdName);
-            }
+    private finishEntrySave(): void {
+        if (!this.entrySaveActive || State.Password === '' || this.entrySaveOutcome === undefined) return;
+        const result = this.entrySaveOutcome;
+        this.entrySaveOutcome = undefined;
+        if (result === false) {
+            this.setEntrySaveFeedback(false, true);
         } else {
-            alert('Insert a name for this entry!');
-            this.focusEl(this.IdName);
+            State.CryptPass = result.cryptPass;
+            State.EntriesManage = result.entries;
+            this.viewEntry(result.name);
         }
     }
-    
+
+    protected async editEntry(): Promise<void> { await this.saveEntry(true); }
+    protected async addEntry(): Promise<void> { await this.saveEntry(false); }
+
+    private async saveEntry(edit: boolean): Promise<void> {
+        // Set before the first await: also protects repeated Enter/programmatic submits.
+        if (this.savingEntry) return;
+        const name = this.getVal(this.IdName);
+        const oldName = edit ? this.getVal(this.IdNameOld) : name;
+        if (!name) {
+            alert(Localization.text('entry.noName'));
+            this.focusEl(this.IdName);
+            return;
+        }
+        if ((!edit || name !== oldName) && State.EntriesManage.GetEntry(name) !== false) {
+            alert(Localization.text('entry.duplicateNamed').replace('{name}', name));
+            this.focusEl(this.IdName);
+            return;
+        }
+        const entry = this.composeEntry();
+        const session = State.CryptPass;
+        const password = State.Password;
+        const key = State.K;
+        this.savingEntry = true;
+        this.entrySaveOutcome = undefined;
+        this.setEntrySaveFeedback(true);
+        try {
+            // Yield for feedback before synchronous encryption. Use an isolated model:
+            // the library mutates both its entries manager and ciphertext before writing.
+            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+            const data = await Config.readData();
+            const uri = await Config.getActiveKeyPassUri();
+            if (!uri || State.Password === '' || State.CryptPass !== session) throw new Error('Session changed');
+            // Pin the destination so a later lock/profile switch cannot redirect a write.
+            const candidate = new LibCryptPass.CryptPassCached({
+                ...StandardRnW,
+                KeyPassWriter: (vault, keepBackup) => FS.WriteFile(uri, JSON.stringify(vault), keepBackup)
+            }, data.kp, data.se);
+            const entries = candidate.GetEntriesManage(key, true);
+            const updated = edit
+                ? (name === oldName || entries.UpdateEntryName(oldName, name)) && entries.UpdateEntry(entry)
+                : entries.AddEntry(entry);
+            if (!updated || !await candidate.SetEntries(entries.Export(), password)) throw new Error('Entry save failed');
+            this.entrySaveOutcome = { name, cryptPass: candidate, entries };
+        } catch (_) {
+            // Preserve the form and the committed session. Never log entry contents.
+            this.entrySaveOutcome = false;
+        } finally {
+            this.savingEntry = false;
+            this.setEntrySaveFeedback(false);
+            this.finishEntrySave();
+        }
+    }
 
     protected async handleNew() {
         this.setApp(`<p>${ViewHelpers.button(this.IdGoToInit,'Go back',this.ClassFormBtnSec)}</p>
         <h2>Add new entry</h2>
         <form id="${this.IdAddEntryForm}">
-        ${this.entryMask(undefined, false)}
-        <p>${ViewHelpers.submit(this.IdAddEntry,'Save entry',this.ClassFormBtn)}</p>
+        <fieldset data-entry-fields>${this.entryMask(undefined, false)}
+        <p>${ViewHelpers.submit(this.IdAddEntry,'Save entry',this.ClassFormBtn)}</p></fieldset>
+        ${this.entrySaveStatus()}
         </form>`,() => this.clickEl(this.IdGoToInit));
     }
 

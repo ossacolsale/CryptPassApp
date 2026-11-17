@@ -1,12 +1,23 @@
 {
   "electron": {
     "linux": {
-      "package": ["deb", "zip"],
-      "arch": ["x64"]
+      "package": [
+        "AppImage",
+        "deb"
+      ],
+      "arch": [
+        "x64"
+      ],
+      "artifactName": "CryptPass-${version}-linux-x64.${ext}"
     },
     "windows": {
-      "package": ["nsis", "zip"],
-      "arch": ["x64"]
+      "package": [
+        "portable"
+      ],
+      "arch": [
+        "x64"
+      ],
+      "artifactName": "CryptPass-${version}-windows-x64.${ext}"
     }
   }
 }

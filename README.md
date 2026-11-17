@@ -2,32 +2,54 @@
 
 CryptPass App is a Cordova password wallet for Android, Linux and Windows. Vault contents are encrypted by the pinned [CryptPass library](https://github.com/ossacolsale/CryptPass); this app does not implement cryptography itself.
 
-## Platform support status
+## Desktop downloads and installation
 
-| Platform | Build | Runtime tested in this remediation | File handling | Secure metadata | Notes |
-|---|---|---|---|---|---|
-| Linux | Yes: `.deb` and `.zip` | No interactive launch test | Electron native open/save dialogs; opaque main-process handles | Electron async `safeStorage` | Initialization fails closed unless async encryption is available and a non-persisted encryption probe reports the Secret Service (`v11`) or portal (`v12`) provider. The weaker POSIX fallback (`v10`) is rejected; the async Portal provider remains supported even if the legacy backend reports `basic_text`. See the [security audit remediation record](docs/SECURITY_AUDIT_2026-10.md). |
-| Windows | Yes: NSIS installer and `.zip` | No Windows runtime test | Electron native open/save dialogs; opaque main-process handles | Electron `safeStorage` | Unsigned development builds are supported; configure certificate settings for signed releases. |
-| Android | Build could not complete here | No device/provider test | SAF document URIs and persisted URI permissions | Android secure-storage plugin | Cloud `DocumentProvider` behavior depends on the provider; SDK Platform 36 could not be installed because `/lib/android-sdk` is not writable in the build environment, and device/provider behavior still needs testing. |
+Download the latest stable desktop release from [Releases/latest](https://github.com/ossacolsale/CryptPassApp/releases/latest). Until the first stable release is published, or to browse older releases, use [all Releases](https://github.com/ossacolsale/CryptPassApp/releases).
 
-The Electron build generates the `.deb`, Linux `.zip`, Windows NSIS installer and Windows `.zip` in `platforms/electron/build/`. These build results do not imply an interactive runtime test on Linux or Windows.
+The x64 desktop distributables are:
+
+- **Windows portable `.exe`**: download and run `CryptPass-<version>-windows-x64.exe`; no installer is required.
+- **Linux portable `.AppImage`**: download `CryptPass-<version>-linux-x64.AppImage`, run `chmod +x CryptPass-*-linux-x64.AppImage`, then launch it with `./CryptPass-<version>-linux-x64.AppImage`. A working FUSE setup may be required by the AppImage runtime.
+- **Linux `.deb`** for Debian, Ubuntu, Mint and derivatives: install with `sudo apt install ./CryptPass-<version>-linux-x64.deb`, then launch CryptPass from the application menu.
+
+Builds are unsigned by default. Windows may show an unknown-publisher/SmartScreen prompt; verify the download source before running. No antivirus exclusions are required.
+
+Linux requires an available OS secure-storage service: Secret Service (for example, an unlocked GNOME Keyring or KeePassXC Secret Service provider) or the desktop portal secret provider. CryptPass checks Electron's asynchronous `safeStorage` encryption and accepts only Secret Service (`v11`) or portal (`v12`) encryption. Initialization fails closed for the weaker POSIX fallback (`v10`); a supported async portal is accepted even if the legacy backend reports `basic_text`. AppImage portability does not remove these storage requirements.
+
+## Platform verification status
+
+The workflow defines native Windows and Linux builds; configuration alone is not proof of a successful build. Run results and downloadable artifacts are recorded in GitHub Actions. Local automated tests do not establish interactive runtime compatibility. Windows, Linux desktop focus/input behavior and Android SAF/device behavior require the manual checks described below.
+
+Browser builds share the UI and submit protection, but the current filesystem adapter has no browser vault writer: browser persistence returns failure and must never be shown as a successful save.
 
 ## Build and test
 
-Use Node.js 22 for the Electron packaging toolchain. Install dependencies with `npm ci`; the postinstall script applies a compatibility patch for `cordova-electron@4.0.0` and `electron-builder@26.15.3`.
+Use Node.js 22 and Cordova CLI 11.1.0 for the Electron packaging toolchain. Install dependencies with `npm ci`; the postinstall script applies a compatibility patch for `cordova-electron@4.0.0` and `electron-builder@26.15.3`.
 
 ```sh
+npm install --global cordova@11.1.0
+npm ci
 npm test
 npx tsc --noEmit
+cordova platform add electron@4.0.0 --nosave
 npm run build-electron
-npm run build-android
 ```
 
-Android builds also need the Android SDK and a compatible JDK installed. `npm run test-electron` launches the desktop app for manual testing; `npm run test-android` launches it on an attached device/emulator.
+Electron outputs are written to `platforms/electron/build/`. Each host builds only its native x64 targets; the compatibility patch disables Electron Builder publishing (`publish: never`). The CryptPass dependency compilation uses a cross-platform Node cleanup instead of its Unix-only `rm` script.
+
+Android builds also need SDK Platform 36, Build Tools 35.0.0 and JDK 17 installed. Use `cordova platform add android --nosave` if needed; `npm run electron-compile && cordova build android --debug` produces a test APK with the distinct `com.cryptpass.app.debug` ID. `npm run build-android` is for explicitly authorized Android releases. `npm run test-electron` launches the desktop app for manual testing; `npm run test-android` launches it on an attached device/emulator.
 
 The current development lockfile still contains deprecated toolchain packages. `q@1.5.1` comes through `cordova-common@5.0.1` from `cordova-android@14.0.1`, `cordova-browser@7.0.0` and `cordova-electron@4.0.0`. `glob@7.2.3` and `inflight@1.0.6` come through `shelljs@0.8.5` from `cordova-browser`, `rimraf@3.0.2` from `electron-devtools-installer@3.2.1` in `cordova-electron`, and `@electron/asar@3.4.1` in `electron-builder`; `rimraf@2.6.3` comes through `temp@0.9.4` in the Windows packaging chain. `boolean@3.2.0` comes through `global-agent@3.0.0` and `roarr@2.15.4` in the Electron builder chain. These are development and packaging dependencies. The current Cordova parents are still in use, and major-version overrides can break their consumers. The migration path is to move Android to a Cordova platform/toolchain release whose supported `cordova-common` tree removes `q`, and replace `cordova-electron@4.0.0` with a maintained Electron packaging path whose builder tree removes the `electron-devtools-installer` and `temp` chains; then run `npm explain`, `npm ls`, Android plugin checks and Linux/Windows packaging before updating the lockfile. Recheck the paths after that migration.
 
 For a signed Windows release, provide a certificate file and password through Electron Builder's `CSC_LINK` and `CSC_KEY_PASSWORD` environment variables, or configure the `electron.windows.signing.release` object in `build.json`. Do not commit certificate files or passwords. The default build is unsigned.
+
+## GitHub Actions and desktop releases
+
+In **Actions → Electron x64 → Run workflow**, select `master` (or the branch to test). The manual run creates downloadable `electron-windows-x64` and `electron-linux-x64` Actions artifacts without creating a release. Actions wraps downloads in transport ZIPs; inside are the actual `.exe`, `.AppImage` and `.deb` distributables. The two native jobs use Node 22, `npm ci`, tests, TypeScript checking and `npm run build-electron`. They verify the expected filenames, nonempty contents and executable/package signatures before uploading. Failed tests or builds prevent artifact upload for that job.
+
+To publish a desktop release, first align `package.json`, the root lockfile versions and `config.xml`, commit the reviewed changes, and explicitly push a matching stable version tag `vX.Y.Z`. For example, after substituting the actual version, use `git tag vX.Y.Z` and `git push origin vX.Y.Z`. Tag/version mismatches fail the workflow. Only a tag push can run the release job, and only after **both** native builds succeed. That job downloads both artifacts, verifies all three distributables and attaches those files to one GitHub Release. Build jobs have `contents: read`; only the release job has `contents: write`. No Android deployment, signing secrets or automatic Electron Builder publication are involved. An existing release is not overwritten by a rerun.
+
+For manual regression checks, lock Electron by timeout while another app is active, while minimized, and while CryptPass is active. The session must lock without activating/restoring the window; on a voluntary return the unlock field must accept input. On Android and Electron, test adding and renaming an entry with slow storage, repeated Save/Enter, failed writes and retry, then reopen the vault to confirm persistence. Also test a timeout/minimize during a pending save: the unlock screen must stay visible and the form/result must recover after unlocking.
 
 ## Vault files and recovery
 

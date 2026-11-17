@@ -163,8 +163,13 @@ cryptPassHandle('cryptpass:secureStorageStatus', async () => {
         backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform
     };
 });
-cryptPassHandle('cryptpass:focusWindow', async () => {
+cryptPassHandle('cryptpass:focusWindow', async (activate = true) => {
     if (!mainWindow || mainWindow.isDestroyed()) return false;
+    if (activate === false) {
+        if (mainWindow.isMinimized() || !mainWindow.isVisible() || !mainWindow.isFocused()) return false;
+        mainWindow.webContents.focus();
+        return true;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     if (!mainWindow.isVisible()) mainWindow.show();
     mainWindow.focus();
@@ -224,7 +229,7 @@ contextBridge.exposeInMainWorld('cryptPassDesktop', {
     secureGet: (key) => ipcRenderer.invoke('cryptpass:secureGet', key),
     secureSet: (key, value) => ipcRenderer.invoke('cryptpass:secureSet', key, value),
     secureDelete: (key) => ipcRenderer.invoke('cryptpass:secureDelete', key),
-    focusWindow: () => ipcRenderer.invoke('cryptpass:focusWindow'),
+    focusWindow: (activate = true) => ipcRenderer.invoke('cryptpass:focusWindow', activate),
     onLockRequested: (callback) => {
         const handler = () => callback();
         ipcRenderer.on('cryptpass:lock', handler);

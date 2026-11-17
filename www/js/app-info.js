@@ -1,1 +1,1 @@
-window.CRYPTPASS_APP_INFO = {"version":"1.4.0"};
+window.CRYPTPASS_APP_INFO = {"version":"1.5.0"};

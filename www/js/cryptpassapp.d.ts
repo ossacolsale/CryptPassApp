@@ -239,7 +239,7 @@ declare abstract class View implements ViewModel {
     protected getEl(elId: string): HTMLElement;
     protected isChecked(elId: string): boolean;
     protected getVal(elId: string, raw?: boolean): string;
-    protected focusEl(elId: string, alsoSelect?: boolean): void;
+    protected focusEl(elId: string, alsoSelect?: boolean, activateWindow?: boolean): void;
     private LoaderShowCommands;
     protected LoaderShow(doSomethingBeforeHiding?: () => any, doSomethingAfterHiding?: (res?: any) => any, hideAfter?: boolean): void;
     protected LoaderShowAsync(doSomethingBeforeHiding?: () => any | Promise<any>, doSomethingAfterHiding?: (res?: any) => any | Promise<any>, hideAfter?: boolean): Promise<void>;
@@ -414,6 +414,8 @@ declare class MainView extends View {
     private showWrongPassword;
     private showUnlockDiagnostic;
     reactivateUnlockPassword(): void;
+    private readonly onUnlockWindowFocus;
+    End(): void;
     private focusPassword;
     protected handleDontChPwd(): void;
     Handlers: EventHandlerModel[];
@@ -505,6 +507,9 @@ declare class PassView extends View implements ViewModel {
     Init(): Promise<void>;
     protected searchTimer: number | undefined;
     protected searchRoutine(names: string[], firstTime?: boolean): void;
+    private savingEntry;
+    private entrySaveActive;
+    private entrySaveOutcome?;
     End(): void;
     ResumeAfterLock(): void;
     protected showHideTags(): void;
@@ -535,8 +540,13 @@ declare class PassView extends View implements ViewModel {
     protected viewEntry(EntryName: string): void;
     protected composeEntry(): EntryView;
     protected deleteEntry(): Promise<void>;
+    private entrySecretValue;
+    private entrySaveStatus;
+    private setEntrySaveFeedback;
+    private finishEntrySave;
     protected editEntry(): Promise<void>;
     protected addEntry(): Promise<void>;
+    private saveEntry;
     protected handleNew(): Promise<void>;
     protected OtherCounter: number;
     protected entryMask(entry?: EntryView, readonly?: boolean): string;

@@ -100,6 +100,7 @@
   "entry.mandatory": "Name * (mandatory)",
   "entry.namePlaceholder": "Put here the entry name",
   "entry.tagsPlaceholder": "Tags comma separated (eg. \"work, Windows\")",
+  "entry.saving": "Saving in progress",
   "entry.save": "Save entry",
   "entry.remove": "Delete entry",
   "entry.confirmDeleteQuestion": "Are you sure to proceed?",
