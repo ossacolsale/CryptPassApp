@@ -96,14 +96,26 @@ test('artifact guard requires all three final distributables and rejects ZIP-onl
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('Actions publishes master pushes only after native builds, targeting their exact commit', () => {
+test('CI runs only fast checks on master pushes and pull requests', () => {
+    const workflow = yaml.parse(read('.github/workflows/ci.yml'));
+    assert.deepEqual(workflow.on, { push: { branches: ['master'] }, pull_request: null });
+    assert.deepEqual(workflow.permissions, { contents: 'read' });
+    assert.deepEqual(workflow.concurrency, {
+        group: '${{ github.workflow }}-${{ github.ref }}', 'cancel-in-progress': true
+    });
+    assert.deepEqual(Object.keys(workflow.jobs), ['test']);
+    const steps = workflow.jobs.test.steps;
+    assert.deepEqual(steps.filter(step => step.run).map(step => step.run), ['npm ci', 'npm test', 'npx tsc --noEmit']);
+    assert.deepEqual(steps.filter(step => step.uses).map(step => step.uses.split('@')[0]), ['actions/checkout', 'actions/setup-node']);
+});
+
+test('manual master releases publish verified assets from both native builds at their exact commit', () => {
     const workflow = yaml.parse(read('.github/workflows/electron.yml'));
-    assert.ok('workflow_dispatch' in workflow.on);
-    assert.deepEqual(workflow.on.push.branches, ['master']);
-    assert.equal(workflow.on.push.tags, undefined, 'created release tags must not trigger duplicate builds');
+    assert.deepEqual(workflow.on, { workflow_dispatch: null });
+    assert.equal(workflow.concurrency['cancel-in-progress'], false);
     assert.deepEqual(workflow.permissions, { contents: 'read' });
     assert.equal(workflow.jobs.release.needs, 'build');
-    assert.equal(workflow.jobs.release.if, "github.event_name == 'push' && github.ref == 'refs/heads/master'");
+    assert.equal(workflow.jobs.release.if, "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'");
     assert.deepEqual(workflow.jobs.release.permissions, { contents: 'write' });
     assert.deepEqual(workflow.jobs.build.strategy.matrix.include.map(item => item.platform), ['windows', 'linux']);
     const steps = workflow.jobs.build.steps;
@@ -113,14 +125,14 @@ test('Actions publishes master pushes only after native builds, targeting their 
     assert.ok(steps.findIndex(step => step.run === 'npm run build-electron') < steps.findIndex(step => step.uses?.startsWith('actions/upload-artifact')));
     const uploads = steps.filter(step => step.uses?.startsWith('actions/upload-artifact'));
     assert.equal(uploads.length, 1);
+    assert.equal(uploads[0].with['retention-days'], 2);
     const downloads = workflow.jobs.release.steps.filter(step => step.uses?.startsWith('actions/download-artifact'));
     assert.deepEqual(downloads.map(step => step.with.name), ['electron-windows-x64', 'electron-linux-x64']);
     assert.ok(downloads.every(step => step.with.path === 'release-assets'));
     const publish = workflow.jobs.release.steps.find(step => step.name === 'Create GitHub release');
     assert.equal(publish.env.RELEASE_TAG, 'v${{ steps.version.outputs.value }}');
     assert.equal(publish.env.RELEASE_COMMIT, '${{ github.sha }}');
-    assert.match(publish.run, /gh release create "\$RELEASE_TAG" --target "\$RELEASE_COMMIT"/);
-    assert.match(publish.run, /git ls-remote --tags origin/);
-    assert.match(publish.run, /if \[ -n "\$existing_tag" \]; then[\s\S]*exit 1/);
-    assert.doesNotMatch(publish.run, /--clobber|--verify-tag/);
+    assert.match(publish.run, /gh api --method POST .*\/git\/refs"[\s\S]*-f ref="refs\/tags\/\$RELEASE_TAG" -f sha="\$RELEASE_COMMIT"/);
+    assert.match(publish.run, /gh release create "\$RELEASE_TAG" --verify-tag --target "\$RELEASE_COMMIT"/);
+    assert.doesNotMatch(publish.run, /--clobber|--force/);
 });

@@ -2,9 +2,6 @@ name: Electron x64
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
 
 permissions:
   contents: read
@@ -50,6 +47,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: electron-${{ matrix.platform }}-x64
+          retention-days: 2
           if-no-files-found: error
           path: |
             platforms/electron/build/CryptPass-*-${{ matrix.platform }}-x64.exe
@@ -59,7 +57,7 @@ jobs:
   release:
     name: Publish desktop release
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -72,7 +70,9 @@ jobs:
           node-version: '22'
       - name: Verify release version
         id: version
-        run: echo "value=$(node scripts/check-release-version.js)" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(node scripts/check-release-version.js)
+          echo "value=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: electron-windows-x64
@@ -90,12 +90,17 @@ jobs:
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
           RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          existing_tag=$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
-          if [ -n "$existing_tag" ]; then
-            echo "Tag $RELEASE_TAG already exists; increment the app version before publishing."
+          # Actions expression comparisons ignore case. Require the exact branch before writing.
+          test "$GITHUB_REF" = refs/heads/master
+          release_tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
+          if grep -Fxq "$RELEASE_TAG" <<< "$release_tags"; then
+            echo "::error::Release $RELEASE_TAG already exists."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" --target "$RELEASE_COMMIT" --title "CryptPass $RELEASE_VERSION" --generate-notes \
+          # Create-only operation: an existing tag (even at this SHA) fails the step.
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" -f sha="$RELEASE_COMMIT" --silent
+          gh release create "$RELEASE_TAG" --verify-tag --target "$RELEASE_COMMIT" --title "CryptPass $RELEASE_VERSION" --generate-notes \
             "release-assets/CryptPass-$RELEASE_VERSION-windows-x64.exe" \
             "release-assets/CryptPass-$RELEASE_VERSION-linux-x64.AppImage" \
             "release-assets/CryptPass-$RELEASE_VERSION-linux-x64.deb"

@@ -47,11 +47,17 @@ For a signed Windows release, provide a certificate file and password through El
 
 ## GitHub Actions and desktop releases
 
-In **Actions → Electron x64 → Run workflow**, select `master` (or the branch to test). The manual run creates downloadable `electron-windows-x64` and `electron-linux-x64` Actions artifacts without creating a release. Actions wraps downloads in transport ZIPs; inside are the actual `.exe`, `.AppImage` and `.deb` distributables. The two native jobs use Node 22, `npm ci`, tests, TypeScript checking and `npm run build-electron`. They verify the expected filenames, nonempty contents and executable/package signatures before uploading. Failed tests or builds prevent artifact upload for that job.
+Pushes to `master` and pull requests run **CI** on Linux with Node 22, `npm ci`, `npm test` and `npx tsc --noEmit`. New runs cancel superseded checks on the same branch or pull request.
 
-Every push to `master` now starts the native Windows/Linux builds automatically and publishes a desktop release only after both builds and all checks succeed. For each completed, verified significant change, Codex increments the version (patch for fixes/infrastructure/documentation, minor for features), aligns `package.json`, the root lockfile versions and `config.xml`, then commits and pushes. No manual tag or release command is needed. The release job creates `vX.Y.Z` at the exact commit that was built, downloads both Actions artifacts, verifies all three distributables and attaches them to the GitHub Release. Existing version tags are rejected rather than overwritten; use a new version for the next publication. Tag creation does not trigger another build. Manual workflow runs remain available for build-only checks and do not publish releases.
+To publish a desktop release:
 
-Build jobs have `contents: read`; only the release job has `contents: write`. Electron Builder publishing remains disabled, so the workflow is the sole publisher. No Android deployment or signing secrets are involved. Codex monitors the run and checks the published release assets before declaring publication complete.
+1. Prepare a commit on `master` with an unused stable version in `package.json`, both root version entries in `package-lock.json`, and `config.xml`. Leave tag creation to the workflow.
+2. Open **Actions → Electron x64 → Run workflow**, select **master** and run it. Selecting another branch runs just the native builds and checks.
+3. Both Windows and Linux x64 jobs check the version, run the tests and TypeScript checks, build the installers and verify their filenames and file signatures. Once both jobs succeed, the release job downloads their artifacts, checks the three installers together and creates `vX.Y.Z` at the commit used by the build. It then attaches the portable Windows EXE, Linux AppImage and DEB to the GitHub Release.
+
+An existing release (including a draft) or tag blocks publication. If publishing fails after tag creation, inspect the tag, commit and any draft before recovery. A new run will refuse to reuse that tag. The two intermediate Actions artifacts expire after two days. The installer files uploaded to the release have their own storage and remain downloadable from **Releases**.
+
+CI and native build jobs have `contents: read`. Only the release job has `contents: write`. Electron Builder publishing remains disabled.
 
 For manual regression checks, lock Electron by timeout while another app is active, while minimized, and while CryptPass is active. The session must lock without activating/restoring the window; on a voluntary return the unlock field must accept input. On Android and Electron, test adding and renaming an entry with slow storage, repeated Save/Enter, failed writes and retry, then reopen the vault to confirm persistence. Also test a timeout/minimize during a pending save: the unlock screen must stay visible and the form/result must recover after unlocking.
 
